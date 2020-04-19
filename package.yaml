@@ -4,7 +4,7 @@ description:         Deep dive NbE
 license:             BSD3
 author:              Nick Chapman
 maintainer:          nic@amadido.co.uk
-github:              https://github.com/Nick-Chapman/nbe.git
+github:              https://github.com/Nick-Chapman/NbE.git
 
 extra-source-files:
 - README.md
