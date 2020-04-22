@@ -4,42 +4,34 @@ module Norm(normalize) where
 import Control.Monad(ap,liftM,(>=>))
 import Ast
 
-
 normalize :: Exp -> Exp
 normalize = runM . norm
-
 
 norm :: Exp -> M Exp
 norm = reflect >=> reify
 
-
-data SemVal = Syntax Exp
-
+data SemVal
 
 reify :: SemVal -> M Exp
-reify = \case
-  Syntax e -> return e
-
+reify = undefined
 
 reflect :: Exp -> M SemVal
 reflect = \case
-  Num n -> do
-    return $ Syntax (Num n)
-  Add e1 e2 -> do
-    e1 <- norm e1
-    e2 <- norm e2
-    return $ Syntax $ Add e1 e2
-  e@Var{} -> do
-    return $ Syntax e
-  Lam x body -> do
-    return $ Syntax $ Lam x body
-  App e1 e2 -> do
-    e1 <- norm e1
-    e2 <- norm e2
-    return $ Syntax $ App e1 e2
+  Num{} -> do
+    undefined
+  Add{} -> do
+    undefined
+  Var{} -> do
+    undefined
+  Lam{} -> do
+    undefined
+  App{} -> do
+    undefined
   Let x rhs body ->
     reflect (App (Lam x body) rhs)
 
+runM :: M Exp -> Exp
+runM = undefined
 
 instance Functor M where fmap = liftM
 instance Applicative M where pure = return; (<*>) = ap
@@ -48,6 +40,3 @@ instance Monad M where return = Ret; (>>=) = Bind
 data M a where
   Ret :: a -> M a
   Bind :: M a -> (a -> M b) -> M b
-
-runM :: M Exp -> Exp
-runM = undefined

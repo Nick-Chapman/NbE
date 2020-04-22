@@ -1,14 +1,12 @@
+
 module Main(main) where
 
 import Ast
-import Eval(evaluate)
---import Norm(normalize)
+import Eval_Instrumented(evaluate)
 
 main :: IO ()
 main = do
   demo "original" prog
-  --demo "normalized" (normalize prog)
-  return ()
 
 demo :: String -> Exp -> IO ()
 demo tag prog = do
