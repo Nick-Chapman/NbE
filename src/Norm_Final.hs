@@ -52,23 +52,24 @@ duplicatable = \case
 
 reflect :: Exp -> M SemVal
 reflect = \case
-  Var x -> Lookup x
-  Lam x exp -> do
-    env <- Save
-    return $ Macro $ \arg -> do
-      Restore env $ ModEnv (Map.insert x arg) $ reflect exp
-  App e1 e2 -> do
-    v1 <- reflect e1
-    v2 <- reflect e2
-    apply v1 v2
-  Let x rhs body -> do
-    reflect (App (Lam x body) rhs)
+  Num n -> do
+    return $ Syntax (Num n)
   Add e1 e2 -> do
     e1 <- norm e1
     e2 <- norm e2
     return $ Syntax $ Add e1 e2
-  Num n -> do
-    return $ Syntax (Num n)
+  Var x ->
+    Lookup x
+  Lam x body -> do
+    env <- Save
+    return $ Macro $ \arg -> do
+      Restore env $ ModEnv (Map.insert x arg) $ reflect body
+  App e1 e2 -> do
+    v1 <- reflect e1
+    v2 <- reflect e2
+    apply v1 v2
+  Let x rhs body ->
+    reflect (App (Lam x body) rhs)
 
 instance Functor M where fmap = liftM
 instance Applicative M where pure = return; (<*>) = ap

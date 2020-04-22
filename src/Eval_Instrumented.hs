@@ -4,7 +4,6 @@ module Eval_Instrumented(evaluate,Counts(..)) where
 import Control.Monad(ap,liftM)
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map
-
 import Ast
 
 evaluate :: Exp -> (Int,Counts)
@@ -23,7 +22,8 @@ eval = \case
     v2 <- eval e2
     CountAdd
     return $ add v1 v2
-  Var x -> Lookup x
+  Var x ->
+    Lookup x
   Lam x exp -> do
     env <- Save
     return $ Function $ \arg -> do
