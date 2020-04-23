@@ -1,0 +1,124 @@
+
+----------------------------------------------------------------------
+data SemVal = Syntax Exp
+- reify easy. flesh out simple deep traversal
+
+----------------------------------------------------------------------
+Lookup/ModEnv
+- careful adding caller of ModEnv - wrap around return
+
+----------------------------------------------------------------------
+Fresh
+
+----------------------------------------------------------------------
+data SemVal = Syntax Exp | Macro (SemVal -> M SemVal)
+
+reify = \case
+
+  Macro f -> do
+    x <- Fresh
+    body  <- f (Syntax (Var x)) >>= reify
+    return $ Lam x body
+
+----------------------------------------------------------------------
+intro/call apply
+
+----------------------------------------------------------------------
+define apply
+
+apply :: SemVal -> SemVal -> M SemVal
+apply func arg = case func of
+  Syntax func -> do
+    arg <- reify arg
+    return $ Syntax $ App func arg
+  Macro f -> do
+    f arg -- Beta Happens Here! woo hoo
+
+----------------------------------------------------------------------
+intro use of Macro in handling Lam
+
+  Lam x body -> do
+    return $ Macro $ \arg ->
+      ModEnv (Map.insert x arg) $ reflect body
+
+----------------------------------------------------------------------
+Save/Restore
+
+----------------------------------------------------------------------
+runM
+- here's one I prepare earlier!
+
+runM :: M Exp -> Exp
+runM m = snd $ loop Map.empty 1 m k0 where
+  k0 s e = (s,e)
+  loop :: Env -> State -> M a -> (State -> a -> Res) -> Res
+  loop env state m k = case m of
+
+    Ret x -> k state x
+    Bind m f -> loop env state m $ \state a -> loop env state (f a) k
+    Lookup x -> maybe (error $ "lookup:"<>x) (k state) (Map.lookup x env)
+    Fresh -> k (state+1) ("v" <> show state)
+    Save -> k state env
+    Restore env m -> loop env state m k
+    ModEnv f m -> loop (f env) state m k
+    Wrap f m -> f' (loop env state m k) where f' (s,e) = (s,f e)
+    Reset m -> let (state',v) = loop env state m k0 in k state' v
+
+type Res = (State,Exp)
+type State = Int
+
+
+import Data.Map (Map)
+import qualified Data.Map.Strict as Map
+
+
+----------------------------------------------------------------------
+(run -- get duplicated + ops)
+
+duplicatable :: SemVal -> Bool
+duplicatable = \case
+  Syntax (Var{}) -> True
+  Syntax (Num{}) -> True
+  Syntax _ -> False
+  Macro{} -> True
+
+----------------------------------------------------------------------
+(run again, see lets. need floating!)
+
+float lets
+
+  Wrap :: (Exp -> Exp) -> M a -> M a
+  Reset :: M Exp -> M Exp
+
+Just Wrap -- we float to high
+
+  Macro f -> do
+    if duplicatable arg then f arg else do -- beta!
+      x <- Fresh
+      arg <- reify arg
+      Wrap (Let x arg) $ f (Syntax (Var x))
+
+----------------------------------------------------------------------
+(run, show unbound var)
+
+add Reset
+
+  Macro f -> do
+    x <- Fresh
+    body  <- Reset (f (Syntax (Var x)) >>= reify)
+    return $ Lam x body
+
+and we are done!
+(final run)
+
+----------------------------------------------------------------------
+
+nameIt :: Exp -> M Var
+nameIt exp = do
+  x <- Fresh
+  Wrap (Let x exp) $ return x
+
+  Macro f -> do
+    if duplicatable arg then f arg else do -- beta!
+      x <- reify arg >>= nameIt
+      f (Syntax (Var x))

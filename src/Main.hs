@@ -2,7 +2,7 @@
 module Main(main) where
 
 import Ast
-import Eval_Instrumented(evaluate)
+import Eval(evaluate)
 
 main :: IO ()
 main = do
