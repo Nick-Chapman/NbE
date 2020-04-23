@@ -1,0 +1,588 @@
+
+
+--[1]-----------------------------------------------------------------
+
+    "Normalization by Evaluation"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[2]-----------------------------------------------------------------
+
+    "Normalization by Evaluation"
+
+        What?
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[3]-----------------------------------------------------------------
+
+    "Normalization"
+        ??
+
+    "Evaluation"
+        ??
+
+    "by"
+        ??
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[4]-----------------------------------------------------------------
+
+    "Normalization"
+        The act of obtaining a Normal Form of a (Lambda Calculus) term.
+
+    "Evaluation"
+        A method of reducing a term to a value.
+
+    "by"
+        Indicates the means of achieving something.
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[5]-----------------------------------------------------------------
+
+    "Normalization"
+        The act of obtaining a Normal Form of a (Lambda Calculus) term.
+
+    "Evaluation"
+        A method of reducing a term to a value.
+
+    "by"
+        Indicates the means of achieving something.
+
+    "Lambda Calculus"
+        ??
+
+    "Normal Form"
+        ??
+
+
+----------------------------------------------------------------------
+
+
+--[6]-----------------------------------------------------------------
+
+    "Lambda Calculus"
+
+        x               (variable reference)
+        (\x. A)         (lambda abstraction)
+        (A B)           (application)
+
+
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[7]-----------------------------------------------------------------
+
+    "Lambda Calculus" (with numbers & addition)
+
+        x               (variable reference)
+        (\x. A)         (lambda abstraction)
+        (A B)           (application)
+        n               (number)
+        (A + B)         (addition)
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[8]-----------------------------------------------------------------
+
+    "Lambda Calculus" (with numbers, addition, and let-expression)
+
+        x               (variable reference)
+        (\x. A)         (lambda abstraction)
+        (A B)           (application)
+        n               (number)
+        (A + B)         (addition)
+        let x = A in B  (let-expresion)
+
+
+    let x = A in B      === ((\x.B) A)
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[9]-----------------------------------------------------------------
+
+    "(Beta) Normal Form"
+        A Lambda Calculus term where no beta reduction is possible.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[10]-----------------------------------------------------------------
+
+    "(Beta) Normal Form"
+        A Lambda Calculus term where no beta reduction is possible.
+
+    "Beta reduction"
+        ((\x. A) B)  --->  A [ x := B ]
+
+    "A [ x := B ]"
+        Mixfix substitution operator:  _ [ _ := _ ] :: Term x Var x Term
+        Replace all free occurrances of x, with term Bin, in term A
+
+    "Free variable"
+        A variable reference bound by an enclosing lambda.
+
+    "Closed term"
+        A term with no free variables.
+
+----------------------------------------------------------------------
+
+
+--[11]-----------------------------------------------------------------
+
+    "(Standard) Lambda Calculus Evaluation"
+
+        Reduce a Closed Lambda Calculus term to a Value.
+        By means of repeated beta-reduction.
+
+    "Value"
+
+        (\x. A)         (lambda abstraction)
+        n               (number)
+
+    "Reductions:"
+
+        ((\x. A) B)  --->  A [ x := B ]         (beta reduction)
+
+
+
+----------------------------------------------------------------------
+
+
+--[12]-----------------------------------------------------------------
+
+    "(Standard) Lambda Calculus Evaluation"
+
+        Reduce a Closed Lambda Calculus term to a Value.
+        By means of repeated beta-reduction, and delta-reduction.
+
+    "Value"
+
+        (\x. A)         (lambda abstraction)
+        n               (number)
+
+    "Reductions:"
+
+        ((\x. A) B)  --->  A [ x := B ]         (beta reduction)
+        (n1 + n2)    --->  n1+n2                (delta reduction)
+
+
+----------------------------------------------------------------------
+
+
+--[12A]-----------------------------------------------------------------
+
+    "(Standard) Lambda Calculus Evaluation" (CBV / Applicative Order)
+
+        Reduce a Closed Lambda Calculus term to a Value.
+        By means of repeated beta-reduction, and delta-reduction.
+
+    "Value"
+
+        (\x. A)         (lambda abstraction)
+        n               (number)
+
+    "Reductions:"
+
+        ((\x. A) B)  --->  A [ x := V ]         (beta reduction)
+        (n1 + n2)    --->  n1+n2                (delta reduction)
+        ((\x. A) B)  --->  let x = B in A       (??)
+
+----------------------------------------------------------------------
+
+
+--[13]-----------------------------------------------------------------
+
+    "Normalization by Evaluation"
+
+        Wiki - Obtain Normal Forms of Lambda Calculus by appealing
+        to their denotational semantics.
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[14]-----------------------------------------------------------------
+
+    "Normalization by Evaluation"
+
+        Wiki - Obtain Normal Forms of Lambda Calculus by appealing
+        to their denotational semantics.
+
+    "Term" -- Any Lambda Calculus term.
+    "Value" -- Some representation of the Semantic Value of a term.
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[15]-----------------------------------------------------------------
+
+    "Normalization by Evaluation"
+
+        Wiki - Obtain Normal Forms of Lambda Calculus by appealing
+        to their denotational semantics.
+
+    "Term" -- Any Lambda Calculus term.
+    "Value" -- Some representation of the Semantic Value of a term.
+
+
+    reflect : Term -> SemValue
+    reify   : SemValue -> Term
+
+
+    (see nice picture!)
+
+
+----------------------------------------------------------------------
+
+
+--[16]-----------------------------------------------------------------
+
+    "Normalization by Evaluation"
+
+        Wiki - Obtain Normal Forms of Lambda Calculus by appealing
+        to their denotational semantics.
+
+    "Term" -- Any Lambda Calculus term.
+    "Value" -- Some representation of the Semantic Value of a term.
+
+
+    reflect : Term -> SemValue
+    reify   : SemValue -> Term
+
+    norm    : Term -> Term
+    norm    = reify . reflect
+
+
+----------------------------------------------------------------------
+
+
+--[17]-----------------------------------------------------------------
+
+    "Normalization by Evaluation"
+
+        Why?
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[18]-----------------------------------------------------------------
+
+    "Normalization by Evaluation"
+
+        Normalizion can be regarded as optimization.
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[19]-----------------------------------------------------------------
+
+    "Normalization by Evaluation"
+
+        Normalizion can be regarded as optimization.
+
+
+        Any beta-redex which is reduced at compile time is
+        (potentially many) redexes which don't have to be reduced
+        at runtime.
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[20]-----------------------------------------------------------------
+
+    "Example"
+
+        original = \arg -> do
+          let dub x = x + x
+          let twice f x = f (f x)
+          let increase q x = dub x + q
+          twice (increase (arg+1)) 3
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[21]-----------------------------------------------------------------
+
+    "Example"
+
+        original = \arg -> do
+          let dub x = x + x
+          let twice f x = f (f x)
+          let increase q x = dub x + q
+          twice (increase (arg+1)) 3
+
+
+        (original 9) --> ??
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[22]-----------------------------------------------------------------
+
+    "Example"
+
+        original = \arg -> do
+          let dub x = x + x
+          let twice f x = f (f x)
+          let increase q x = dub x + q
+          twice (increase (arg+1)) 3
+
+
+        (original 9) --> 42
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[23]-----------------------------------------------------------------
+
+    "Example"
+
+        original = \arg -> do
+          let dub x = x + x
+          let twice f x = f (f x)
+          let increase q x = dub x + q
+          twice (increase (arg+1)) 3
+
+
+        (original 9) --> 42
+
+        5 "+" reductions; 8 function calls (beta-reductions)
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[24]-----------------------------------------------------------------
+
+    "Example"
+
+        original = \arg -> do
+          let dub x = x + x
+          let twice f x = f (f x)
+          let increase q x = dub x + q
+          twice (increase (arg+1)) 3
+
+        goal = \arg -> do
+          let q = arg + 1
+          let x0 = 3
+          let x1 = (x0 + x0) + q
+          (x1 + x1) + q
+
+
+
+----------------------------------------------------------------------
+
+
+--[25]-----------------------------------------------------------------
+
+    "Example"
+
+        original = \arg -> do
+          let dub x = x + x
+          let twice f x = f (f x)
+          let increase q x = dub x + q
+          twice (increase (arg+1)) 3
+
+        goal = \arg -> do
+          let q = arg + 1
+          let x0 = 3
+          let x1 = (x0 + x0) + q
+          (x1 + x1) + q
+
+        (goal 9) --> 42, 5 "+" reductions; zero function calls
+
+----------------------------------------------------------------------
+
+
+--[26]-----------------------------------------------------------------
+
+    "Normalization by Evaluation"
+
+        How?
+
+
+
+
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
+
+
+--[27]-----------------------------------------------------------------
+
+    "Normalization by Evaluation"
+
+        How?
+
+        Lets see some code....
+
+
+
+
+
+
+
+
+
+
+
+----------------------------------------------------------------------
