@@ -72,7 +72,7 @@
         A method of reducing a term to a value.
 
     "by"
-        Indicates the means of achieving something.
+        Indicates the means of achieving something. ;)
 
 
 
@@ -93,7 +93,7 @@
         A method of reducing a term to a value.
 
     "by"
-        Indicates the means of achieving something.
+        Indicates the means of achieving something. ;)
 
     "Lambda Calculus"
         ??
@@ -266,7 +266,7 @@
 
     "Reductions:"
 
-        ((\x. A) B)  --->  A [ x := V ]         (beta reduction)
+        ((\x. A) V)  --->  A [ x := V ]         (beta reduction)
         (n1 + n2)    --->  n1+n2                (delta reduction)
         ((\x. A) B)  --->  let x = B in A       (??)
 

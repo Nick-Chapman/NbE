@@ -29,18 +29,13 @@ apply func arg = case func of
     return $ Syntax $ App func arg
   Macro f -> do
     if duplicatable arg then f arg else do -- beta!
-      x <- reify arg >>= nameIt
-      f (Syntax (Var x))
-
-nameIt :: Exp -> M Var
-nameIt exp = do
-  x <- Fresh
-  Wrap (Let x exp) (return x)
+      x <- Fresh
+      arg <- reify arg
+      Wrap (Let x arg) (f (Syntax (Var x)))
 
 duplicatable :: SemVal -> Bool
 duplicatable = \case
-  Syntax (Var{}) -> True
-  Syntax (Num{}) -> True
+  Syntax (Var _) -> True
   Syntax _ -> False
   Macro{} -> True
 
@@ -53,7 +48,7 @@ reflect = \case
   Add e1 e2 -> do
     e1 <- norm e1
     e2 <- norm e2
-    return $ Syntax $ Add e1 e2
+    return $ Syntax (Add e1 e2)
 
   Var x -> do
     Lookup x
@@ -70,10 +65,6 @@ reflect = \case
 
   Let x rhs body ->
     reflect (App (Lam x body) rhs)
-
-
-
-
 
 
 instance Functor M where fmap = liftM
