@@ -42,6 +42,7 @@ data Kont {-k-}
   | Kfun Value Kont
   | Kadd1 Env Exp Kont
   | Kadd2 Value Kont
+  | Kbind Var Exp Kont
   deriving (Show)
 
 step :: Machine -> Machine
@@ -62,7 +63,9 @@ step = \case
   (CV (Number n2), q, Kadd2 (Number n1) k) -> (CV (Number (n1+n2)), q, k)
   (CV _, _, Kadd2 _ _) -> error "cant add non-numbers"
 
-  (CE (Let x rhs body), q, k) -> (CE (App (Lam x body) rhs), q, k)
+  --(CE (Let x rhs body), q, k) -> (CE (App (Lam x body) rhs), q, k)
+  (CE (Let x rhs body), q, k) -> (CE rhs, q, Kbind x body k)
+  (CV v, q, Kbind x e k) -> (CE e, Map.insert x v q, k)
 
 
 data Counts = Counts (Map Class Int)
@@ -91,6 +94,7 @@ data Class
   | AtKfun
   | AtKadd1
   | AtKadd2
+  | AtKbind
   deriving (Show,Eq,Ord)
 
 classify :: Machine -> Class
@@ -114,3 +118,4 @@ classifyK = \case
   Kfun{} -> AtKfun
   Kadd1{} -> AtKadd1
   Kadd2{} -> AtKadd2
+  Kbind{} -> AtKbind
