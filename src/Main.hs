@@ -2,8 +2,10 @@
 module Main(main) where
 
 import Ast
---import Eval_Instrumented(evaluate)
-import Cek(evaluate)
+import Eval_Instrumented(evaluate)
+import qualified Cek(evaluate)
+import qualified Cek2(evaluate)
+import qualified Cek3(evaluate)
 --import Norm_Final(normalize)
 
 main :: IO ()
@@ -15,7 +17,10 @@ demo :: String -> Exp -> IO ()
 demo tag prog = do
   print tag
   print prog
-  print (evaluate (App prog (Num 9)))
+  print "Eval"; print (evaluate (App prog (Num 9)))
+  print "CEK"; print (Cek.evaluate (App prog (Num 9)))
+  print "CEK2"; print (Cek2.evaluate (App prog (Num 9)))
+  print "CEK3"; print (Cek3.evaluate (App prog (Num 9)))
 
 prog :: Exp
 prog = Lam "arg" (
