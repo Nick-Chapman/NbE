@@ -2,13 +2,14 @@
 module Main(main) where
 
 import Ast
-import Eval_Instrumented(evaluate)
-import Norm_Final(normalize)
+--import Eval_Instrumented(evaluate)
+import Cek(evaluate)
+--import Norm_Final(normalize)
 
 main :: IO ()
 main = do
   demo "original" prog
-  demo "optimized" (normalize prog)
+  --demo "optimized" (normalize prog)
 
 demo :: String -> Exp -> IO ()
 demo tag prog = do
