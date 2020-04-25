@@ -50,6 +50,7 @@ prettyLet hang = \case
   [oneLine] -> ["let " ++ hang ++ oneLine ++ " in "]
   lines -> ["let " ++ hang] ++ ["  " ++ line | line <- lines ] ++ ["in"]
 
+
 ----------------------------------------------------------------------
 -- compile time
 
@@ -136,14 +137,16 @@ type Res = (State,Code)
 type State = Int
 type CompileEnv = Map Var Atom
 
+
 ----------------------------------------------------------------------
 -- run time
 
-type Env {-q-} = Map Var Value
+type Machine {-m-} = (Counts,Control,Env,Kont)
+data Counts  {-i-} = Counts (Map Micro Int)
+type Control {-c-} = Code
+type Env     {-q-} = Map Var Value
+data Kont    {-k-} = Kbind Env Var Code Kont | Kdone
 
-type Machine = (Counts,Control,Env,Kont)
-type Control = Code
-data Kont = Kbind Env Var Code Kont | Kdone
 
 -- | execute (flat)code on a CEK machine
 execute :: Code -> Result
@@ -156,10 +159,10 @@ install c = (counts0, c, Map.empty, Kdone)
 -- | run a machine unti the final value is calculated
 run :: Machine -> Result
 run (i,c,q,k) = case c of
-  Return a -> send (bump DoReturn i) (atomic q a) k
-  LetAdd x (a1,a2) c -> run (bump DoAdd i, c, q', k) where q' = Map.insert x (add (atomic q a1) (atomic q a2)) q
-  LetLam x (fx,fc) c -> run (bump DoMakeClosure i, c, q', k) where q' = Map.insert x (Clo (Closure q fx fc)) q
-  LetCall x (f,a) c -> jump (bump DoPushContinuation i) q f a (Kbind q x c k)
+  Return a -> send (tick [DoReturn] i) (atomic q a) k
+  LetAdd x (a1,a2) c -> run (tick [DoAddition] i, c, q', k) where q' = Map.insert x (add (atomic q a1) (atomic q a2)) q
+  LetLam x (fx,fc) c -> run (tick [DoMakeClosure] i, c, q', k) where q' = Map.insert x (Clo (Closure q fx fc)) q
+  LetCall x (f,a) c -> jump (tick [DoPushContinuation] i) q f a (Kbind q x c k)
   Tail f a -> jump i q f a k
 
 send :: Counts -> Value -> Kont -> Result
@@ -173,7 +176,7 @@ atomic q = \case
   ANum n -> Number n
 
 jump :: Counts -> Env -> Var -> Atom -> Kont -> Result
-jump i q f a k = run (bump DoJump i, cf, q', k)
+jump i q f a k = run (tick [DoJump] i, cf, q', k)
   where
     Clo (Closure qf xf cf) = look f q -- will fail if not a Closure
     q' = Map.insert xf (atomic q a) qf
@@ -185,10 +188,12 @@ add :: Value -> Value -> Value
 add (Number n1) (Number n2) = Number (n1+n2)
 add _ _ = error "can't add non-numbers"
 
+
 ----------------------------------------------------------------------
 -- instrumentation
 
-data Counts {-z-} = Counts (Map Class Int)
+tick :: [Micro] -> Counts -> Counts
+tick mics i = foldl countMicro i mics
 
 instance Show Counts where
   show (Counts m) =
@@ -197,13 +202,13 @@ instance Show Counts where
 counts0 :: Counts
 counts0 = Counts Map.empty
 
-bump :: Class -> Counts -> Counts
-bump cl (Counts m) = Counts (Map.insertWith (+) cl 1 m)
+countMicro :: Counts -> Micro -> Counts
+countMicro (Counts mm) cl = Counts (Map.insertWith (+) cl 1 mm)
 
-data Class
-  = DoJump
-  | DoReturn
-  | DoAdd
-  | DoPushContinuation
+data Micro
+  = DoReturn
+  | DoAddition
   | DoMakeClosure
+  | DoJump
+  | DoPushContinuation
   deriving (Show,Eq,Ord)

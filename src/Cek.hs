@@ -11,24 +11,9 @@ instance Show Result where
   show (Result v counts) =
     unlines [ "value: " ++ show v, "counts:", show counts ]
 
-data Value
-  = Number Int
-  | Clo Env Var Exp
-  deriving (Show)
+data Value = Number Int | Clo Closure deriving (Show)
+data Closure = Closure Env Var Exp deriving (Show)
 
-evaluate :: Exp -> Result
-evaluate e = loop (install e) where
-  loop :: Machine -> Result
-  loop m = do
-    case finished m of
-      Just res -> res
-      Nothing -> loop (step (tick [DoOuterStep] m))
-
-install :: Exp -> Machine
-install e = (counts0, CE e, Map.empty, Kdone)
-
-finished :: Machine -> Maybe Result
-finished = \case (i, CV v, _, Kdone) -> Just (Result v i); _ -> Nothing
 
 type Machine {-m-} = (Counts,Control,Env,Kont)
 data Counts  {-i-} = Counts (Map Micro Int)
@@ -43,23 +28,49 @@ data Kont    {-k-}
   | Kbind Env Var Exp Kont
   deriving (Show)
 
+
+evaluate :: Exp -> Result
+evaluate e = loop (install e) where
+  loop :: Machine -> Result
+  loop m@(i,c,q,k) = do
+    case finished m of
+      Just res -> res
+      Nothing -> loop (step (tick [DoOuterStep] i,c,q,k))
+
+install :: Exp -> Machine
+install e = (counts0, CE e, Map.empty, Kdone)
+
+finished :: Machine -> Maybe Result
+finished = \case (i, CV v, _, Kdone) -> Just (Result v (tick [DoKdone] i)); _ -> Nothing
+
+
 -- | take one step of the machine; the machine must not be in a finished state
 step :: Machine -> Machine
-step m = case tick (micsM m) m of
-  (i, CE (Num n), q, k)                 -> (i, CV (Number n), q, k)
-  (i, CE (Add e1 e2), q, k)             -> (i, CE e1, q, Kadd1 q e2 k)
-  (i, CE (Var x), q, k)                 -> (i, CV (look x q), q, k)
-  (i, CE (Lam x body), q, k)            -> tick [DoClose] (i, CV (Clo q x body), q, k)
-  (i, CE (App e1 e2), q, k)             -> (i, CE e1, q, Karg q e2 k)
-  (i, CE (Let x rhs body), q, k)        -> (i, CE rhs, q, Kbind q x body k)
+step m@(i,e,q,k) = step' (tick (micsM m) i,e,q,k)
 
-  (_, CV _, _, Kdone)                   -> error "stepping a finished machine"
-  (i, CV v, _, Karg q e k)              -> (i, CE e, q, Kfun v k)
-  (_, CV _, _, Kfun Number{} _)         -> error "cant apply a non-function"
-  (i, CV v, _, Kfun (Clo q x e) k)      -> (i, CE e, Map.insert x v q, k)
-  (i, CV v1, _, Kadd1 q e k)            -> (i, CE e, q, Kadd2 v1 k)
-  (i, CV v1, q, Kadd2 v2 k)             -> tick [DoAddition] (i, CV (add v1 v2), q, k)
-  (i, CV v, _, Kbind q x e k)           -> (i, CE e, Map.insert x v q, k)
+step' :: Machine -> Machine
+step' = \case
+  (i, CE (Num n), q, k)                         -> (i, CV (Number n), q, k)
+  (i, CE (Add e1 e2), q, k)                     -> (i, CE e1, q, Kadd1 q e2 k)
+  (i, CE (Var x), q, k)                         -> (i, CV (look x q), q, k)
+  (i, CE (Lam x body), q, k)                    -> (i, CV (Clo (Closure q x body)), q, k)
+  (i, CE (App e1 e2), q, k)                     -> (i, CE e1, q, Karg q e2 k)
+  (i, CE (Let x rhs body), q, k)                -> (i, CE rhs, q, Kbind q x body k)
+
+  (_, CV _, _, Kdone)                           -> error "stepping a finished machine"
+  (i, CV v, _, Karg q e k)                      -> (i, CE e, q, Kfun v k)
+  (_, CV _, _, Kfun Number{} _)                 -> error "cant apply a non-function"
+  (i, CV v, _, Kfun (Clo (Closure q x e)) k)    -> (i, CE e, Map.insert x v q, k)
+  (i, CV v1, _, Kadd1 q e k)                    -> (i, CE e, q, Kadd2 v1 k)
+  (i, CV v1, q, Kadd2 v2 k)                     -> (tick [DoAddition] i, CV (add v1 v2), q, k)
+  (i, CV v, _, Kbind q x e k)                   -> (i, CE e, Map.insert x v q, k)
+
+
+-- | The micro steps about to be taken, from a given machine state
+micsM :: Machine -> [Micro]
+micsM = \case
+  (_, CE e, _, _) -> [DoControlE, microE e]
+  (_, CV _, _, k) -> [DoControlV, microK k]
 
 
 look :: Var -> Env -> Value
@@ -70,14 +81,9 @@ add (Number n1) (Number n2) = Number (n1+n2)
 add _ _ = error "can't add non-numbers"
 
 
--- | The micro steps about to be taken, from a given machine state
-micsM :: Machine -> [Micro]
-micsM = \case
-  (_, CE e, _, _) -> [DoControlE, micsE e]
-  (_, CV _, _, k) -> [DoControlV, micsK k]
-
-micsE :: Exp -> Micro
-micsE = \case
+-- | The micro step about to be taken, from a machine control expression
+microE :: Exp -> Micro
+microE = \case
   Num{} -> DoNum
   Add{} -> DoAdd
   Var{} -> DoVar
@@ -85,8 +91,9 @@ micsE = \case
   App{} -> DoApp
   Let{} -> DoLet
 
-micsK :: Kont -> Micro
-micsK = \case
+-- | The micro step about to be taken, from a machine continuation
+microK :: Kont -> Micro
+microK = \case
   Kdone{} -> DoKdone
   Karg{} -> DoKarg
   Kfun{} -> DoKfun
@@ -95,9 +102,10 @@ micsK = \case
   Kbind{} -> DoKbind
 
 
--- | Record (in the machine state) a list of micro steps as having been taken
-tick :: [Micro] -> Machine -> Machine
-tick mics (i, c, q, k) = (foldl countMicro i mics, c, q, k)
+-- | Record (in the counts) a list of micro steps as having been taken
+
+tick :: [Micro] -> Counts -> Counts
+tick mics i = foldl countMicro i mics
 
 instance Show Counts where
   show (Counts m) =
@@ -129,7 +137,6 @@ data Micro
   | DoKadd2
   | DoKbind
   -- Useful computation
-  | DoClose
   | DoAddition
   deriving (Show,Eq,Ord)
 
