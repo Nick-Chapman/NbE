@@ -42,7 +42,7 @@ data Kont {-k-}
   | Kfun Value Kont
   | Kadd1 Env Exp Kont
   | Kadd2 Value Kont
-  | Kbind Var Exp Kont
+  | Kbind Env Var Exp Kont
   deriving (Show)
 
 step :: Machine -> Machine
@@ -64,8 +64,8 @@ step = \case
   (CV _, _, Kadd2 _ _) -> error "cant add non-numbers"
 
   --(CE (Let x rhs body), q, k) -> (CE (App (Lam x body) rhs), q, k)
-  (CE (Let x rhs body), q, k) -> (CE rhs, q, Kbind x body k)
-  (CV v, q, Kbind x e k) -> (CE e, Map.insert x v q, k)
+  (CE (Let x rhs body), q, k) -> (CE rhs, q, Kbind q x body k)
+  (CV v, _, Kbind q x e k) -> (CE e, Map.insert x v q, k)
 
 
 data Counts = Counts (Map Class Int)

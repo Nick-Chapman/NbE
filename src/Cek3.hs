@@ -60,7 +60,7 @@ evaluate e = run counts0 (e, Map.empty, Kdone) where
 
 add :: Value -> Value -> Value
 add (Number n1) (Number n2) = Number (n1+n2)
-add _ _ = error "add"
+add _ _ = error "can't add non-numbers"
 
 ----------------------------------------------------------------------
 

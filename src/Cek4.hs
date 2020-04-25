@@ -32,7 +32,7 @@ data Kont {-k-}
   | Kfun Value Kont
   | Kadd1 Env Exp Kont
   | Kadd2 Value Kont
-  | Kbind Var Exp Kont
+  | Kbind Env Var Exp Kont
   deriving (Show)
 
 evaluate :: Exp -> Result
@@ -44,7 +44,7 @@ evaluate e = run counts0 (e, Map.empty, Kdone) where
   run' :: Counts -> Machine -> Result
   run' z = \case
 --    (Let x rhs body, q, k) -> run z (App (Lam x body) rhs, q, k)
-    (Let x rhs body, q, k) -> run z (rhs, q, Kbind x body k)
+    (Let x rhs body, q, k) -> run z (rhs, q, Kbind q x body k)
     (Num n, q, k) -> runV z (Number n) q k
     (Var x, q, k) -> runV z (look x q) q k
     (Lam x body, q, k) -> runV z (Clo q x body) q k
@@ -59,11 +59,11 @@ evaluate e = run counts0 (e, Map.empty, Kdone) where
     Kadd1 q e k -> run z (e, q, Kadd2 v k)
     Kadd2 v2 k -> runV z (add v v2) q k
     Kdone -> Result v z
-    Kbind x e k -> run z (e, Map.insert x v q, k)
+    Kbind q x e k -> run z (e, Map.insert x v q, k)
 
 add :: Value -> Value -> Value
 add (Number n1) (Number n2) = Number (n1+n2)
-add _ _ = error "add"
+add _ _ = error "can't add non-numbers"
 
 ----------------------------------------------------------------------
 

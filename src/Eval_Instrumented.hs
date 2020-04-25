@@ -39,11 +39,11 @@ eval = \case
 
 add :: Value -> Value -> Value
 add (Number n1) (Number n2) = Number (n1+n2)
-add _ _ = error "add"
+add _ _ = error "can't add non-numbers"
 
 apply :: Value -> Value -> M Value
 apply (Function f) arg = f arg
-apply _ _ = error "apply"
+apply _ _ = error "can't apply a non function"
 
 instance Functor M where fmap = liftM
 instance Applicative M where pure = return; (<*>) = ap
