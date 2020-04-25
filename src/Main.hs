@@ -4,8 +4,6 @@ module Main(main) where
 import Ast
 import Eval_Instrumented(evaluate)
 import qualified Cek(evaluate)
-import qualified Cek2(evaluate)
-import qualified Cek3(evaluate)
 import qualified Cek4(evaluate)
 import qualified Cek5(compile,execute)
 --import Norm_Final(normalize)
@@ -21,8 +19,6 @@ demo tag prog = do
   print prog
   print "Eval"; print (evaluate (App prog (Num 9)))
   print "CEK"; print (Cek.evaluate (App prog (Num 9)))
-  print "CEK2"; print (Cek2.evaluate (App prog (Num 9)))
-  print "CEK3"; print (Cek3.evaluate (App prog (Num 9)))
   print "CEK4"; print (Cek4.evaluate (App prog (Num 9)))
 
   print "CEK5"
