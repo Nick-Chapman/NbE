@@ -28,27 +28,38 @@ data Atom = AVar Var | ANum Int
 
 data Code -- flattened expression
   = Return Atom
+  | Tail Var Atom
+  | LetCode Var Code Code
   | LetAdd Var (Atom,Atom) Code
   | LetLam Var (Var,Code) Code
-  | LetCall Var (Var,Atom) Code
-  | Tail Var Atom
 
-instance Show Code where show = unlines . pretty
 instance Show Atom where show = \case ANum n -> show n; AVar s -> s
+instance Show Code where show = unlines . pretty
 
+-- | basic pretty print, see nested lets as in a functional program
+_pretty :: Code -> [String]
+_pretty = \case
+  Return a -> [show a]
+  Tail xf a -> [xf ++ " " ++ show a]
+  LetCode x rhs body -> indented ("let " ++ x ++ " =") (pretty rhs) ++ pretty body
+  LetAdd x (a1,a2) c -> indented ("let " ++ x ++ " =") [show a1 ++ " + " ++ show a2] ++ pretty c
+  LetLam x (xf,xc) c -> indented ("let " ++ x ++ " = \\" ++ xf ++ ".") (pretty xc) ++ pretty c
+
+-- | pretty print, showing explicit continutaion management: push, return, (and tail)
 pretty :: Code -> [String]
 pretty = \case
-  Return a -> [show a]
-  LetAdd x (a1,a2) c -> prettyLet (x ++ " = ") [show a1 ++ "+" ++ show a2] ++ pretty c
-  LetLam x (xf,xc) c -> prettyLet (x ++ " = \\" ++ xf ++ ".") (pretty xc) ++ pretty c
-  LetCall x (xf,a) c -> prettyLet (x ++ " = ") [xf ++ " " ++ show a] ++ pretty c
-  Tail xf a -> [xf ++ " " ++ show a]
+  Return a -> ["return: " ++ show a]
+  Tail xf a -> ["tail: " ++ xf ++ " " ++ show a]
+  LetCode x rhs body -> indented ("push: " ++ x ++  " ->") (pretty body) ++ pretty rhs
+  LetAdd x (a1,a2) c -> indented ("let " ++ x ++ " =") [show a1 ++ " + " ++ show a2] ++ pretty c
+  LetLam x (xf,xc) c -> indented ("let " ++ x ++ " = \\" ++ xf ++ ".") (pretty xc) ++ pretty c
 
-prettyLet :: String -> [String] -> [String]
-prettyLet hang = \case
-  [] -> error "prettyLet, no body"
-  [oneLine] -> ["let " ++ hang ++ oneLine ++ " in "]
-  lines -> ["let " ++ hang] ++ ["  " ++ line | line <- lines ] ++ ["in"]
+
+indented :: String -> [String] -> [String]
+indented hang = \case
+  [] -> error "indented, no body"
+  [oneLine] -> [hang ++ " " ++ oneLine]
+  lines -> [hang] ++ ["  " ++ line | line <- lines]
 
 
 ----------------------------------------------------------------------
@@ -56,54 +67,66 @@ prettyLet hang = \case
 
 -- | compile an expression to (flat)code for a CEK machine
 compile :: Exp -> Code
-compile exp = runM (codify exp)
+compile exp = runM (codifyAs Nothing exp)
 
-codify :: Exp -> M Code
-codify exp = do
-  compileRT Nothing exp >>= \case
-    RT'Return a -> return $ Return a
-    RT'Tail fx a -> return $ Tail fx a
-
-data RT = RT'Return Atom | RT'Tail Var Atom -- return or tail
-
-getName :: Maybe Var -> M Var
-getName = \case
-  Just x -> return x
-  Nothing -> Fresh
-
-atomize :: Maybe Var -> Exp -> M Atom
-atomize mx exp = do
-  compileRT mx exp >>= \case
-    RT'Return a -> return a
-    RT'Tail fx a -> do
-      name <- getName mx
-      Wrap (LetCall name (fx,a)) (return $ AVar name)
-
-compileRT :: Maybe Var -> Exp -> M RT
-compileRT mx = \case
+codifyAs :: Maybe Var -> Exp -> M Code
+codifyAs mx = \case
   Num n -> do
-    return $ RT'Return $ ANum n
+    return $ Return $ ANum n
   Add e1 e2 -> do
-    a1 <- atomize Nothing e1
-    a2 <- atomize Nothing e2
-    name <- getName mx
-    Wrap (LetAdd name (a1,a2)) (return $ RT'Return $ AVar name)
+    a1 <- atomize $ codify e1
+    a2 <- atomize $ codify e2
+    name <- fresh mx
+    Wrap (LetAdd name (a1,a2)) $ return $ Return $ AVar name
   Var x -> do
     a <- Lookup x
-    return $ RT'Return a
-  Lam fx body -> do
-    name <- getName mx
-    fc <- Reset (ModEnv (Map.insert fx (AVar fx)) $ codify body)
-    Wrap (LetLam name (fx,fc)) (return $ RT'Return $ AVar name)
-  App e1 e2 -> do
-    a1 <- atomize Nothing e1
-    a2 <- atomize Nothing e2
-    case a1 of
+    return $ Return a
+  Lam formal body -> do
+    let bodyName = fmap (++"-body") mx
+    name <- fresh mx
+    body <- ModEnv (Map.insert formal (AVar formal)) $ Reset (codifyAs bodyName body)
+    Wrap (LetLam name (formal,body)) (return $ Return $ AVar name)
+  App func arg -> do
+    aFunc <- atomize $ Reset (codify func)
+    aArg <- atomize $ Reset (codify arg)
+    case aFunc of
       ANum{} -> error "application of number detected"
-      AVar xf -> return $ RT'Tail xf a2
+      AVar f -> return $ Tail f aArg
   Let x rhs body -> do
-    a <- atomize (Just x) rhs
-    ModEnv (Map.insert x a) $ compileRT mx body
+    a <- atomizeAs (Just x) $ codifyAs (Just x) rhs
+    ModEnv (Map.insert x a) $ codifyAs mx body
+  where
+    codify = codifyAs Nothing
+    atomize = atomizeAs Nothing
+
+atomizeAs :: Maybe Var -> M Code -> M Atom
+atomizeAs mx m = do
+  m >>= \case
+    Return a -> return a -- dont re-name at atom
+    rhs -> do
+      x <- fresh mx
+      Wrap (letCode' x rhs) $ return $ AVar x
+
+-- | Avoid pushing a continutaion which calls a known function
+letCode' :: Var -> Code -> Code -> Code
+letCode' x rhs body
+  | Tail x' arg <- body, x==x', LetLam f def (Return (AVar f')) <- rhs, f==f' =
+  {-
+      push: \x. tail: x arg in
+      let f = \<def> in
+      return: f
+  -->
+      let f = \<def> in
+      tail: f arg
+  -}
+      LetLam f def (Tail f arg)
+  | otherwise =
+      LetCode x rhs body
+
+fresh :: Maybe Var -> M Var
+fresh = \case
+  Just var -> return var
+  Nothing -> Fresh
 
 
 instance Functor M where fmap = liftM
@@ -121,14 +144,14 @@ data M a where
 
 runM :: M Code -> Code
 runM m = snd $ loop Map.empty 1 m k0 where
-  k0 s e = (s,e)
+  k0 state code = (state,code)
   loop :: CompileEnv -> State -> M a -> (State -> a -> Res) -> Res
   loop env state m k = case m of
 
     Ret x -> k state x
     Bind m f -> loop env state m $ \state a -> loop env state (f a) k
-    Reset m -> let (state',v) = loop env state m k0 in k state' v
-    Wrap f m -> f' (loop env state m k) where f' (s,e) = (s,f e)
+    Reset m -> let (state',code) = loop env state m k0 in k state' code
+    Wrap f m -> f' (loop env state m k) where f' (s,a) = (s,f a)
     Lookup x -> maybe (error $ "compile-time-lookup:"<>x) (k state) (Map.lookup x env)
     ModEnv f m -> loop (f env) state m k
     Fresh -> k (state+1) ("_v" <> show state)
@@ -160,10 +183,10 @@ install c = (counts0, c, Map.empty, Kdone)
 run :: Machine -> Result
 run (i,c,q,k) = case c of
   Return a -> send (tick [DoReturn] i) (atomic q a) k
+  Tail f a -> jump i q f a k
+  LetCode x rhs body -> run (tick [DoPushContinuation] i, rhs, q, Kbind q x body k)
   LetAdd x (a1,a2) c -> run (tick [DoAddition] i, c, q', k) where q' = Map.insert x (add (atomic q a1) (atomic q a2)) q
   LetLam x (fx,fc) c -> run (tick [DoMakeClosure] i, c, q', k) where q' = Map.insert x (Clo (Closure q fx fc)) q
-  LetCall x (f,a) c -> jump (tick [DoPushContinuation] i) q f a (Kbind q x c k)
-  Tail f a -> jump i q f a k
 
 send :: Counts -> Value -> Kont -> Result
 send i v = \case
@@ -207,8 +230,8 @@ countMicro (Counts mm) cl = Counts (Map.insertWith (+) cl 1 mm)
 
 data Micro
   = DoReturn
-  | DoAddition
-  | DoMakeClosure
   | DoJump
   | DoPushContinuation
+  | DoAddition
+  | DoMakeClosure
   deriving (Show,Eq,Ord)
