@@ -24,6 +24,8 @@ evaluate = execute . compile
 ----------------------------------------------------------------------
 -- compiled code
 
+-- TODO: support for AddOp, and for compiling it to saturated form when possible
+
 data Atom = AVar Var | ANum Int
 
 data Code -- flattened expression
@@ -73,7 +75,9 @@ codifyAs :: Maybe Var -> Exp -> M Code
 codifyAs mx = \case
   Num n -> do
     return $ Return $ ANum n
-  Add e1 e2 -> do
+  AddOp -> do
+    codeAdd
+  SaturatedAdd e1 e2 -> do
     a1 <- atomize $ codify e1
     a2 <- atomize $ codify e2
     name <- fresh mx
@@ -127,6 +131,15 @@ fresh :: Maybe Var -> M Var
 fresh = \case
   Just var -> return var
   Nothing -> Fresh
+
+codeAdd :: M Code
+codeAdd = do
+  xAdd <- Fresh
+  xAdd1 <- Fresh
+  x1 <- Fresh
+  x2 <- Fresh
+  xRes <- Fresh
+  return $ LetLam xAdd (x1,LetLam xAdd1 (x2, LetAdd xRes (AVar x1,AVar x2) (Return (AVar xRes))) (Return (AVar xAdd1))) (Return (AVar xAdd))
 
 
 instance Functor M where fmap = liftM

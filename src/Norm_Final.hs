@@ -45,10 +45,13 @@ reflect = \case
   Num n -> do
     return $ Syntax (Num n)
 
-  Add e1 e2 -> do
+  AddOp -> do
+    return $ Syntax AddOp
+
+  SaturatedAdd e1 e2 -> do
     e1 <- norm e1
     e2 <- norm e2
-    return $ Syntax (Add e1 e2)
+    return $ Syntax (SaturatedAdd e1 e2)
 
   Var x -> do
     Lookup x

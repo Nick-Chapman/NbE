@@ -6,18 +6,26 @@ import Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import Ast
 
-evaluate :: Exp -> (Int,Counts)
-evaluate exp = let (v,c) = runM (eval exp) in (unNumber v, c)
+evaluate :: Exp -> (Value,Counts)
+evaluate exp = runM (eval exp)
 
 data Value
-  = Number { unNumber :: Int }
-  | Function (Value -> M Value)
+  = Number Int
+  | Function Fun
+  | Vadd0
+  | Vadd1 Value
+  deriving (Show)
+
+newtype Fun = Fun (Value -> M Value)
+instance Show Fun where show _ = "<Fun>"
 
 eval :: Exp -> M Value
 eval = \case
   Num n -> do
     return $ Number n
-  Add e1 e2 -> do
+  AddOp->
+    return Vadd0
+  SaturatedAdd e1 e2 -> do
     v1 <- eval e1
     v2 <- eval e2
     CountAdd
@@ -26,7 +34,7 @@ eval = \case
     Lookup x
   Lam x exp -> do
     env <- Save
-    return $ Function $ \arg -> do
+    return $ Function $ Fun $ \arg -> do
       Restore env $ ModEnv (Map.insert x arg) $ eval exp
   App e1 e2 -> do
     v1 <- eval e1
@@ -42,8 +50,11 @@ add (Number n1) (Number n2) = Number (n1+n2)
 add _ _ = error "can't add non-numbers"
 
 apply :: Value -> Value -> M Value
-apply (Function f) arg = f arg
-apply _ _ = error "can't apply a non function"
+apply = \case
+  Function (Fun f) -> \arg -> f arg
+  Vadd0 -> \arg -> return $ Vadd1 arg
+  Vadd1 v1 -> \v2 -> do CountAdd; return $ add v1 v2
+  f -> error $ "can't apply a non function: " <> show f
 
 instance Functor M where fmap = liftM
 instance Applicative M where pure = return; (<*>) = ap

@@ -11,7 +11,7 @@ instance Show Result where
   show (Result v counts) =
     unlines [ "value: " ++ show v, "counts:", show counts ]
 
-data Value = Number Int | Clo Closure deriving (Show)
+data Value = Number Int | Clo Closure | Vadd0 | Vadd1 Value deriving (Show)
 data Closure = Closure Env Var Exp deriving (Show)
 
 
@@ -51,7 +51,8 @@ step m@(i,e,q,k) = step' (tick (micsM m) i,e,q,k)
 step' :: Machine -> Machine
 step' = \case
   (i, CE (Num n), q, k)                         -> (i, CV (Number n), q, k)
-  (i, CE (Add e1 e2), q, k)                     -> (i, CE e1, q, Kadd1 q e2 k)
+  (i, CE (SaturatedAdd e1 e2), q, k)            -> (i, CE e1, q, Kadd1 q e2 k)
+  (i, CE AddOp, q, k)                           -> (i, CV Vadd0, q, k)
   (i, CE (Var x), q, k)                         -> (i, CV (look x q), q, k)
   (i, CE (Lam x body), q, k)                    -> (i, CV (Clo (Closure q x body)), q, k)
   (i, CE (App e1 e2), q, k)                     -> (i, CE e1, q, Karg q e2 k)
@@ -61,8 +62,10 @@ step' = \case
   (i, CV v, _, Karg q e k)                      -> (i, CE e, q, Kfun v k)
   (_, CV _, _, Kfun Number{} _)                 -> error "cant apply a non-function"
   (i, CV v, _, Kfun (Clo (Closure q x e)) k)    -> (i, CE e, Map.insert x v q, k)
+  (i, CV v, q, Kfun (Vadd0{}) k)                -> (i, CV (Vadd1 v), q, k)
+  (i, CV v2, q, Kfun (Vadd1 v1) k)              -> (tick [DoAddition] i, CV (add v1 v2), q, k)
   (i, CV v1, _, Kadd1 q e k)                    -> (i, CE e, q, Kadd2 v1 k)
-  (i, CV v1, q, Kadd2 v2 k)                     -> (tick [DoAddition] i, CV (add v1 v2), q, k)
+  (i, CV v2, q, Kadd2 v1 k)                     -> (tick [DoAddition] i, CV (add v1 v2), q, k)
   (i, CV v, _, Kbind q x e k)                   -> (i, CE e, Map.insert x v q, k)
 
 
@@ -85,7 +88,8 @@ add _ _ = error "can't add non-numbers"
 microE :: Exp -> Micro
 microE = \case
   Num{} -> DoNum
-  Add{} -> DoAdd
+  SaturatedAdd{} -> DoSaturatedAdd
+  AddOp{} -> DoAddOp
   Var{} -> DoVar
   Lam{} -> DoLam
   App{} -> DoApp
@@ -124,7 +128,8 @@ data Micro
   | DoControlV
   -- Dispatch on control expression
   | DoNum
-  | DoAdd
+  | DoSaturatedAdd
+  | DoAddOp
   | DoVar
   | DoLam
   | DoApp

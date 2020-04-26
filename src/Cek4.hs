@@ -13,7 +13,7 @@ instance Show Result where
   show (Result v counts) =
     unlines [ "value: " ++ show v, "counts:", show counts ]
 
-data Value = Number Int | Clo Closure deriving (Show)
+data Value = Number Int | Clo Closure | Vadd0 | Vadd1 Value deriving (Show)
 data Closure = Closure Env Var Exp deriving (Show)
 
 
@@ -44,7 +44,8 @@ evaluate e0 = run (counts0, e0, Map.empty, Kdone) where
     (i, Var x, q, k)                    -> runV i (look x q) q k
     (i, Lam x body, q, k)               -> runV i (Clo (Closure q x body)) q k
     (i, App e1 e2, q, k)                -> run (i, e1, q, Karg q e2 k)
-    (i, Add e1 e2, q, k)                -> run (i, e1, q, Kadd1 q e2 k)
+    (i, SaturatedAdd e1 e2, q, k)       -> run (i, e1, q, Kadd1 q e2 k)
+    (i, AddOp, q, k)                    -> runV i Vadd0 q k
 
   runV :: Counts -> Value -> Env -> Kont -> Result
   runV i v q k = runV' (tick [microK k] i) v q k
@@ -55,8 +56,10 @@ evaluate e0 = run (counts0, e0, Map.empty, Kdone) where
     Karg q e k                          -> run (i, e, q, Kfun v k)
     Kfun Number{} _k                    -> error "cant apply a non-function"
     Kfun (Clo (Closure q x e)) k        -> run (i, e, Map.insert x v q, k)
+    Kfun Vadd0 k                        -> runV i (Vadd1 v) q k
+    Kfun (Vadd1 v1) k                   -> runV (tick [DoAddition] i) (add v1 v) q k
     Kadd1 q e k                         -> run (i, e, q, Kadd2 v k)
-    Kadd2 v2 k                          -> runV (tick [DoAddition] i) (add v v2) q k
+    Kadd2 v1 k                          -> runV (tick [DoAddition] i) (add v1 v) q k
     Kbind q x e k                       -> run (i, e, Map.insert x v q, k)
 
 
@@ -72,7 +75,8 @@ add _ _ = error "can't add non-numbers"
 microE :: Exp -> Micro
 microE = \case
   Num{} -> DoNum
-  Add{} -> DoAdd
+  SaturatedAdd{} -> DoSaturatedAdd
+  AddOp{} -> DoAddOp
   Var{} -> DoVar
   Lam{} -> DoLam
   App{} -> DoApp
@@ -108,7 +112,8 @@ countMicro (Counts mm) cl = Counts (Map.insertWith (+) cl 1 mm)
 data Micro
   -- Dispatch on control expression
   = DoNum
-  | DoAdd
+  | DoSaturatedAdd
+  | DoAddOp
   | DoVar
   | DoLam
   | DoApp

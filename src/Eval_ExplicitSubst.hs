@@ -3,7 +3,7 @@ module Eval_ExplicitSubst(evaluate) where
 
 import Ast
 
-evaluate :: Exp -> Int
+evaluate :: Exp -> Exp
 evaluate = loop
   where
     loop prog = do
@@ -13,26 +13,30 @@ evaluate = loop
           let prog' = contextF reduced
           loop prog'
         Nothing ->
-          unNum prog
+          prog
 
 
 reduceRedex :: Exp -> Exp
 reduceRedex = \case
   App (Lam x body) arg -> subst (x,arg) body
-  Add (Num a) (Num b) -> Num (a+b)
+  SaturatedAdd (Num a) (Num b) -> Num (a+b)
+  App (App AddOp (Num a)) (Num b) -> Num (a+b)
+  Let x rhs body -> subst (x,rhs) body
   _ -> error "not a redex"
 
 
 findRedex :: Exp -> Maybe (Exp, Exp -> Exp)
 findRedex = \case
-  red@(App (Lam _ _) _)     -> Just (red, \x -> x)      -- beta redex (normal order)
-  red@(Add (Num _) (Num _)) -> Just (red, \x -> x)      -- delta redex
-  Add e1 e2 -> do
+  red@(App (Lam _ _) _)                 -> Just (red, \x -> x) -- beta redex (normal order)
+  red@(SaturatedAdd (Num _) (Num _))    -> Just (red, \x -> x) -- delta redex
+  red@(App (App AddOp (Num _)) (Num _)) -> Just (red, \x -> x) -- delta redex
+  red@(Let _ _ _)                       -> Just (red, \x -> x) -- beta(ish) redex
+  SaturatedAdd e1 e2 -> do
     case findRedex e1 of
-      Just (red, contextF) -> Just (red, \red -> Add (contextF red) e2)
+      Just (red, contextF) -> Just (red, \red -> SaturatedAdd (contextF red) e2)
       Nothing ->
         case findRedex e2 of
-          Just (red, contextF) -> Just (red, \red -> Add e1 (contextF red))
+          Just (red, contextF) -> Just (red, \red -> SaturatedAdd e1 (contextF red))
           Nothing ->
             Nothing
   App e1 e2 -> do
@@ -51,20 +55,27 @@ subst :: (Var,Exp) -> Exp -> Exp
 subst p@(x,replacement) = \case
   e@(Num _) -> e
   e@(Var y) -> if x==y then replacement else e
-  Add e1 e2 -> Add (subst p e1) (subst p e2)
+  e@AddOp-> e
+  SaturatedAdd e1 e2 -> SaturatedAdd (subst p e1) (subst p e2)
   App e1 e2 -> App (subst p e1) (subst p e2)
   e@(Lam y body)
     | x == y -> e
     | y `notElem` fvs replacement -> Lam y (subst p body)
     | otherwise -> undefined -- need to alpha rename: \y.body -> \z.body[y:=z]
-  Let{} -> undefined
+  Let y rhs body
+    | x == y -> Let y (subst p rhs) body
+    | y `notElem` fvs replacement -> Let y (subst p rhs) (subst p body)
+    | otherwise -> undefined -- need to alpha rename
 
 
 fvs :: Exp -> [Var]
 fvs = \case
   Var v -> [v]
-  Add e1 e2 -> fvs e1 ++ fvs e2
+  AddOp-> []
+  SaturatedAdd e1 e2 -> fvs e1 ++ fvs e2
   App e1 e2 -> fvs e1 ++ fvs e2
-  Lam x e -> [ y | y <- fvs e, x /= y ]
+  Lam x e -> fvs e // x
   Num{} -> []
-  Let{} -> undefined
+  Let x rhs body -> fvs rhs ++ (fvs body // x)
+  where
+    ys // x = [ y | y <- ys, x /= y ]

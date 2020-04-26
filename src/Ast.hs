@@ -5,7 +5,8 @@ type Var = String
 
 data Exp
   = Num { unNum :: Int }
-  | Add Exp Exp
+  | AddOp
+  | SaturatedAdd Exp Exp
   | Var Var
   | Lam Var Exp
   | App Exp Exp
@@ -14,7 +15,8 @@ data Exp
 instance Show Exp where
   show = \case
     Num n -> show n
-    Add e1 e2 -> "(" ++ show e1 ++ "+" ++ show e2 ++ ")"
+    AddOp -> "(+)"
+    SaturatedAdd e1 e2 -> "(" ++ show e1 ++ "+" ++ show e2 ++ ")"
     Var s -> s
     Lam s body -> "(\\" ++ s ++ "." ++ show body ++ ")"
     App e1 e2 -> "(" ++ show e1 ++ " " ++ show e2 ++ ")"
