@@ -1,5 +1,5 @@
 
-module Cek5(evaluate,compile,execute) where
+module Cek5(evaluate,compile,execute,Code(..),Atom(..)) where
 -- Goal: pre-stage to flatten expression to ANF style
 -- 2 phase evaluation: compile/execute, using (flat)code to link the phases
 
