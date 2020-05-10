@@ -24,6 +24,7 @@ default-extensions:
 - NumericUnderscores
 - RankNTypes
 - ScopedTypeVariables
+- DuplicateRecordFields
 
 ghc-options:
 - -Werror

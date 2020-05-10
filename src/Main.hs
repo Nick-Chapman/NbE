@@ -1,50 +1,48 @@
 
 module Main(main) where
 
+import System.Environment (getArgs)
+import qualified Data.Map.Strict as Map
+
 import Ast
+import Examples(examples)
 --import Eval_ExplicitSubst(evaluate)
 --import Eval_Environment(evaluate)
 --import Eval(evaluate)
 --import Eval_Instrumented(evaluate)
-import qualified Cek(evaluate)
---import Cek4(evaluate)
-
+--import qualified Cek(evaluate)
+import Cek4(evaluate)
 import qualified Cek5(compile,execute)
-import Norm_Final(normalize)
+--import qualified BC1(compile,execute)
+import qualified ClosureConvert as CC(compile,execute)
 
-import qualified BC1(compile,execute)
+--import Norm_Final(normalize)
 
 main :: IO ()
 main = do
+  let defaultProg = "dive"
+  args <- getArgs
+  let name = case args of [] -> defaultProg; [x] -> x; _ -> error (show args)
+  let prog = maybe (error $ "unknown program: "++name) id (Map.lookup name examples)
   demo "original" prog
-  demo "optimized" (normalize prog)
+  --demo "optimized" (normalize prog)
 
 demo :: String -> Exp -> IO ()
-demo tag prog = do
+demo tag exp = do
   print tag
-  print prog
-  let exp = App prog (Num 9)
-  print "Eval"; print (Cek.evaluate exp)
+  print exp
+
+  print "Eval"; print (evaluate exp)
 
   print "CEK5"
   let code = Cek5.compile exp
-  print code; print (Cek5.execute code)
+  print code
+  print (Cek5.execute code)
 
-  print "ByteCode"
-  let code = BC1.compile exp
-  print code; print (BC1.execute code)
+  --print "BC1"
+  --let code = BC1.compile exp
+  --print code; print (BC1.execute code)
 
-
-prog :: Exp
-prog = Lam "arg" (
-  mkLet "dub" (Lam "x" (add (Var "x") (Var "x"))) (
-  mkLet "thrice" (Lam "f" (Lam "x" (App (Var "f") (App (Var "f") (App (Var "f") (Var "x")))))) (
-  mkLet "increase" (Lam "q" (Lam "x" (mkLet "dubX" (App (Var "dub") (Var "x")) (add (Var "dubX") (Var "q"))))) (
-  App (App (Var "thrice") (App (Var "increase") (add (Var "arg") (Num 1)))) (Num 3)))))
-
-  where
-    --mkLet x rhs body = App (Lam x body) rhs
-    mkLet = Let
-
-    --add e1 e2 = App (App AddOp e1) e2
-    add = SaturatedAdd
+  print "ClosureConverted"
+  let code = CC.compile exp
+  print code; print (CC.execute code)

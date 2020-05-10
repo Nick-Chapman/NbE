@@ -14,8 +14,10 @@ instance Show Result where
   show (Result v counts) =
     unlines [ "value: " ++ show v, "counts:", show counts ]
 
-data Value = Number Int | Clo Closure deriving (Show)
-data Closure = Closure Env Var Code deriving (Show)
+data Value = Number Int | Clo Closure
+data Closure = Closure Env Var Code
+
+instance Show Value where show = \case Number n -> show n; Clo{} -> "<closure>"
 
 -- | compile an expression to (flat)code, and execute on a CEK machine
 evaluate :: Exp -> Result
