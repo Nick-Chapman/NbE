@@ -15,9 +15,8 @@ examples = Map.fromList
   , ("id9", App identity (Num 9))
   , ("dub", dub)
   , ("dub9", App dub (Num 9))
-  , ("twice-dub-9", App (App twice dub) (Num 9))
-  , ("thrice-dub-9", App (App thrice dub) (Num 9))
-  , ("thrice-thrice-dec", App (App (App thrice thrice) decrement) (Num 0))
+  , ("thrice", App (App thrice dub) (Num 9))
+  , ("thrice-thrice", thrice_thrice_example)
 
   , ("dive", App dive (Num 9))
   , ("diveX", App diveX (Num 9))
@@ -37,6 +36,12 @@ twice = Lam "f" (Lam "x" (App (Var "f") (App (Var "f") (Var "x"))))
 
 thrice :: Exp
 thrice = Lam "f" (Lam "x" (App (Var "f") (App (Var "f") (App (Var "f") (Var "x")))))
+
+thrice_thrice_example :: Exp
+thrice_thrice_example =
+  Let "thrice" thrice (
+  Let "dec" decrement (
+  App (App (App (Var "thrice") (Var "thrice")) (Var "dec")) (Num 0)))
 
 -- original example presented at deep dive
 dive :: Exp

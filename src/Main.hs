@@ -5,52 +5,64 @@ module Main(main) where
 import System.Environment (getArgs)
 import qualified Data.Map.Strict as Map
 
-import Ast
 import Examples(examples)
+import qualified Ast(Exp)
 import qualified Evaluate as Eval(evaluate)
 import qualified Cek(evaluate)
 import qualified Anf(flatten)
 import qualified Cek_Anf(execute)
-import qualified BC1(encode,execute)
+--import qualified BC1(encode,execute)
 import qualified ClosureConvert as CC(convert,execute)
 
-import Normalize(normalize)
+import qualified MultiAst(trans)
+import qualified MultiAnf(flatten)
+
+--import Normalize(normalize)
 
 main :: IO ()
 main = do
-  let defaultProg = "thrice-thrice-dec"
+  let defaultProg = "thrice-thrice"
   args <- getArgs
   let name = case args of [] -> defaultProg; [x] -> x; _ -> error (show args)
   let prog = maybe (error $ "unknown program: "++name) id (Map.lookup name examples)
   stages "original" prog
-  stages "optimized" (normalize prog)
+  --stages "optimized" (normalize prog)
 
-stages :: String -> Exp -> IO ()
+stages :: String -> Ast.Exp -> IO ()
 stages tag exp = do
   print "--------------------------------------------------"
   print tag
   print "--------------------------------------------------"
   print exp
 
+  print "trans: Ast.Exp -> MultiAst.Exp"
+  let mexp = MultiAst.trans exp
+  print mexp
+
   print "Eval"; print (Eval.evaluate exp)
   print "Cek"; print (Cek.evaluate exp)
 
-  print "compile: AST -> ANF"
+  print "flatten: Ast.Exp -> Anf.Code"
   let anf = Anf.flatten exp
   print anf
 
-  print "Execute(ANF)..."
+  print "execute(Anf.Code)..."
   print (Cek_Anf.execute anf)
 
-  print "encode: ANF -> ByteCode1"
-  let bc1 = BC1.encode anf
-  print bc1
+  --print "encode: Anf.Code -> BC1.ByteCode"
+  --let bc1 = BC1.encode anf
+  --print bc1
 
-  print "Execute(ByteCode1)..."
-  print (BC1.execute bc1)
+  --print "execute(BC1.ByteCode)..."
+  --print (BC1.execute bc1)
 
-  print "ClosureConvert: ANF -> CC"
-  let cc = CC.convert anf
+  print "flatten: MultiAst.Exp -> MultiAnf.Code"
+  let manf = MultiAnf.flatten mexp
+  print manf
+
+  print "closure-convert: Anf.Code -> CC.Code"
+  let cc = CC.convert manf
   print cc
-  print "Execute(CC)..."
+
+  print "execute(CC.Code)..."
   print (CC.execute cc)

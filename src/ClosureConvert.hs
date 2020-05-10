@@ -1,8 +1,8 @@
 
 module ClosureConvert(convert,execute) where
--- Closure-converted-ANF code (CC code)
--- Compiler("convert") from plain ANF
--- Machine execution of CC code
+-- Closure-converted-(multi)ANF code (CC code)
+-- Compiler("convert") from plain-(multi)ANF
+-- Machine execution of (multi)CC code
 
 import Control.Monad(ap,liftM)
 import Data.Map (Map)
@@ -10,8 +10,8 @@ import Data.Set (Set,(\\))
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
-import Ast
-import qualified Anf(Code(..),Atom(..))
+import Ast(Var)
+import qualified MultiAnf as Anf(Code(..),Atom(..))
 
 data Result = Result Value
 
@@ -78,32 +78,32 @@ convertAnf :: Anf.Code -> M Code
 convertAnf = \case
   Anf.Return a -> Return <$> convertAtom a
 
-  Anf.Tail func arg -> do
+  Anf.Tail func args -> do
     func <- Lookup func
-    arg <- convertAtom arg
-    return $ Tail func [arg]
+    args <- mapM convertAtom args
+    return $ Tail func args
 
   Anf.LetAdd x (a1,a2) code -> do
     a1 <- convertAtom a1
     a2 <- convertAtom a2
-    code <- Extend x $ convertAnf code
+    code <- Extend [x] $ convertAnf code
     return $ LetAdd (a1,a2) code
 
-  Anf.LetLam x (var,body) code -> do
-    let fvs = Set.toList $ fvsBinding (var,body)
+  Anf.LetLam x (formals,body) code -> do
+    let fvs = Set.toList $ fvsBinding (formals,body)
     free <- mapM Lookup fvs
-    let arity = 1
+    let arity = length formals
     let locations = [ (y,LocFree i) | (y,i) <- zip fvs [0..] ]
-    body <- Reset locations $ Extend var $ convertAnf body
-    code <- Extend x $ convertAnf code
+    body <- Reset locations $ Extend formals $ convertAnf body
+    code <- Extend [x] $ convertAnf code
     return $ LetLam {free,arity,body,code}
 
   Anf.LetCode x rhs follow -> do
-    let fvs = Set.toList $ fvsBinding (x,follow)
+    let fvs = Set.toList $ fvsBinding ([x],follow)
     free <- mapM Lookup fvs
     rhs <- convertAnf rhs
     let locations = [ (y,LocFree i) | (y,i) <- zip fvs [0..] ]
-    follow <- Reset locations $ Extend x $ convertAnf follow
+    follow <- Reset locations $ Extend [x] $ convertAnf follow
     return $ LetCode {free,rhs,follow}
 
 convertAtom :: Anf.Atom -> M Atom
@@ -112,16 +112,16 @@ convertAtom = \case
   Anf.AVar x -> ALoc <$> Lookup x
 
 
-fvsBinding :: (Var,Anf.Code) -> Set Var
-fvsBinding (var,code) = fvsCode code \\ Set.singleton var
+fvsBinding :: ([Var],Anf.Code) -> Set Var
+fvsBinding (vars,code) = fvsCode code \\ Set.fromList vars
 
 fvsCode :: Anf.Code -> Set Var
 fvsCode = \case
   Anf.Return a -> fvsAtom a
-  Anf.Tail func arg -> Set.singleton func <> fvsAtom arg
-  Anf.LetAdd x (a1,a2) code -> fvsAtom a1 <> fvsAtom a2 <> fvsBinding (x,code)
-  Anf.LetLam x (var,body) code -> fvsBinding (var,body) <> fvsBinding (x,code)
-  Anf.LetCode x rhs follow -> fvsCode rhs <> fvsBinding (x,follow)
+  Anf.Tail func args -> Set.singleton func <> Set.unions (map fvsAtom args)
+  Anf.LetAdd x (a1,a2) code -> fvsAtom a1 <> fvsAtom a2 <> fvsBinding ([x],code)
+  Anf.LetLam x (vars,body) code -> fvsBinding (vars,body) <> fvsBinding ([x],code)
+  Anf.LetCode x rhs follow -> fvsCode rhs <> fvsBinding ([x],follow)
 
 fvsAtom :: Anf.Atom -> Set Var
 fvsAtom = \case
@@ -137,7 +137,7 @@ data M a where
   Ret :: a -> M a
   Bind :: M a -> (a -> M b) -> M b
   Lookup :: Var -> M Loc
-  Extend :: Var -> M a -> M a
+  Extend :: [Var] -> M a -> M a
   Reset :: [(Var,Loc)] -> M a -> M a
 
 runM :: M a -> a
@@ -147,9 +147,11 @@ runM = loop 0 Map.empty where
     Ret x -> x
     Bind m f -> loop d env (f (loop d env m))
     Reset env m -> loop 0 (Map.fromList env) m
-    Lookup x -> maybe (error $ "compile-time-lookup:"<>show(x,env)) (rel d) (Map.lookup x env)
-    Extend x m ->
-      loop (d+1) (Map.insert x (LocArg d) env) m
+    Lookup x ->
+      maybe (error $ "compile-time-lookup:"<>show(x,env)) (rel d) (Map.lookup x env)
+    Extend xs m -> do
+      let env' = Map.fromList [ (x,LocArg i) | (x,i) <- zip (reverse xs) [d..] ]
+      loop (d + length xs) (Map.union env' env) m
 
 rel :: Int -> Loc -> Loc -- relativize a location to a stack depth
 rel d = \case

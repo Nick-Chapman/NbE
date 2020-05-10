@@ -1,12 +1,14 @@
 
-module Anf(flatten, Var, Code(..), Atom(..)) where
--- ANF code: flattened expressions
--- Compiler("flatten") from Ast
+module MultiAnf(flatten, Code(..), Atom(..)) where
+-- (Multi-app/lam) ANF code: flattened (multi-app/lam) expressions
+-- Compiler("flatten") from MultiAst
 
-import Control.Monad(ap,liftM)
+import Control.Monad(ap,liftM,forM)
+import Data.List(intercalate)
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map
-import Ast
+
+import MultiAst
 
 ----------------------------------------------------------------------
 -- Flattened (ANF style) code
@@ -17,10 +19,10 @@ data Atom = AVar Var | ANum Int
 
 data Code -- flattened expression
   = Return Atom
-  | Tail Var Atom
+  | Tail Var [Atom]
   | LetCode Var Code Code
   | LetAdd Var (Atom,Atom) Code
-  | LetLam Var (Var,Code) Code
+  | LetLam Var ([Var],Code) Code
 
 instance Show Atom where show = \case ANum n -> show n; AVar s -> s
 instance Show Code where show = unlines . pretty
@@ -30,18 +32,33 @@ _pretty :: Code -> [String]
 _pretty = \case
   Return a -> [show a]
   Tail xf a -> [xf ++ " " ++ show a]
-  LetCode x rhs body -> indented ("let " ++ x ++ " =") (pretty rhs) ++ pretty body
-  LetAdd x (a1,a2) c -> indented ("let " ++ x ++ " =") [show a1 ++ " + " ++ show a2] ++ pretty c
-  LetLam x (xf,xc) c -> indented ("let " ++ x ++ " = \\" ++ xf ++ ".") (pretty xc) ++ pretty c
+  LetCode x rhs follow ->
+    indented ("let " ++ x ++ " =") (pretty rhs)
+    ++ pretty follow
+  LetAdd x (a1,a2) code ->
+    indented ("let " ++ x ++ " =") [show a1 ++ " + " ++ show a2]
+    ++ pretty code
+  LetLam x (formals,body) code ->
+    indented ("let " ++ x ++ " = \\[" ++ comma formals ++ "].") (pretty body)
+    ++ pretty code
 
 -- | pretty print, showing explicit continutaion management: push, return, (and tail)
 pretty :: Code -> [String]
 pretty = \case
   Return a -> ["return: " ++ show a]
   Tail xf a -> ["tail: " ++ xf ++ " " ++ show a]
-  LetCode x rhs body -> indented ("push: " ++ x ++  " ->") (pretty body) ++ pretty rhs
-  LetAdd x (a1,a2) c -> indented ("let " ++ x ++ " =") [show a1 ++ " + " ++ show a2] ++ pretty c
-  LetLam x (xf,xc) c -> indented ("let " ++ x ++ " = \\" ++ xf ++ ".") (pretty xc) ++ pretty c
+  LetCode x rhs follow ->
+    indented ("push: " ++ x ++  " ->") (pretty follow) ++ pretty rhs
+  LetAdd x (a1,a2) code ->
+    indented ("let " ++ x ++ " =") [show a1 ++ " + " ++ show a2]
+    ++ pretty code
+  LetLam x (formals,body) code ->
+    indented ("let " ++ x ++ " = \\[" ++ comma formals ++ "].") (pretty body)
+    ++ pretty code
+
+
+comma :: [String] -> String
+comma = intercalate ","
 
 
 indented :: String -> [String] -> [String]
@@ -54,7 +71,8 @@ indented hang = \case
 ----------------------------------------------------------------------
 -- compile time
 
--- | compile an expression to (flat)code for a CEK machine
+-- | compile a (multi)expression to (multi)Anf
+
 flatten :: Exp -> Code
 flatten exp = runM (codifyAs Nothing exp)
 
@@ -72,17 +90,18 @@ codifyAs mx = \case
   Var x -> do
     a <- Lookup x
     return $ Return a
-  Lam formal body -> do
+  Lam formals body -> do
     let bodyName = fmap (++"-body") mx
     name <- fresh mx
-    body <- ModEnv (Map.insert formal (AVar formal)) $ Reset (codifyAs bodyName body)
-    Wrap (LetLam name (formal,body)) (return $ Return $ AVar name)
-  App func arg -> do
+    let mod = Map.union (Map.fromList [ (x,AVar x) | x <- formals ])
+    body <- ModEnv mod $ Reset (codifyAs bodyName body)
+    Wrap (LetLam name (formals,body)) (return $ Return $ AVar name)
+  App func args -> do
     aFunc <- atomize $ Reset (codify func)
-    aArg <- atomize $ Reset (codify arg)
+    aArgs <- forM args $ \arg -> atomize $ Reset (codify arg)
     case aFunc of
       ANum{} -> error "application of number detected"
-      AVar f -> return $ Tail f aArg
+      AVar f -> return $ Tail f aArgs
   Let x rhs body -> do
     a <- atomizeAs (Just x) $ codifyAs (Just x) rhs
     ModEnv (Map.insert x a) $ codifyAs mx body
@@ -126,7 +145,7 @@ codeAdd = do
   x1 <- Fresh
   x2 <- Fresh
   xRes <- Fresh
-  return $ LetLam xAdd (x1,LetLam xAdd1 (x2, LetAdd xRes (AVar x1,AVar x2) (Return (AVar xRes))) (Return (AVar xAdd1))) (Return (AVar xAdd))
+  return $ LetLam xAdd ([x1],LetLam xAdd1 ([x2], LetAdd xRes (AVar x1,AVar x2) (Return (AVar xRes))) (Return (AVar xAdd1))) (Return (AVar xAdd))
 
 
 instance Functor M where fmap = liftM
