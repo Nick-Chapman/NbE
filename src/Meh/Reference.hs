@@ -1,5 +1,5 @@
 
-module Reference(reference) where
+module Meh.Reference(reference) where
 
 -- Haskell reference for example program...
 

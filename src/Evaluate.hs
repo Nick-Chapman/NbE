@@ -1,5 +1,6 @@
 
-module Eval_Instrumented(evaluate,Counts(..)) where
+module Evaluate(evaluate,Counts(..)) where
+-- Standard expression evaluator, with instrumentation
 
 import Control.Monad(ap,liftM)
 import Data.Map (Map)

@@ -1,5 +1,6 @@
 
 module Ast where
+-- AST for user expressions
 
 type Var = String
 

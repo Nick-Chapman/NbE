@@ -1,15 +1,13 @@
 
-module BC1(evaluate,compile,execute) where
--- compile the code with the Cek5 compiler
--- and then compile it further to byte code & execute that
+module BC1(encode,execute) where
+-- ByteCode1: encoded ANF
+-- Compiler("encode") from ANF
+-- (CEK style) Machine to execute ByteCode1
 
 import Control.Monad(ap,liftM)
 
 import Ast
-import qualified Cek5 as Anf(compile,Code(..),Atom(..))
-
-type Anf = Anf.Code
-type Atom = Anf.Atom
+import qualified Anf(Code(..),Atom(..))
 
 data Result = Result [Machine] Value
 
@@ -28,19 +26,13 @@ instance Show Value where
     Number n -> show n
     Clo vs def -> "Clo" ++ show (vs,def)
 
-evaluate :: Exp -> Result
-evaluate = execute . compile
-
-compile :: Exp -> ByteCode
-compile = encode . Anf.compile
-
 ----------------------------------------------------------------------
 -- encode Anf to ByteCode...
 
-encode :: Anf -> ByteCode
+encode :: Anf.Code -> ByteCode
 encode anf = runM (encodeAnf anf)
 
-encodeAnf :: Anf -> M ()
+encodeAnf :: Anf.Code -> M ()
 encodeAnf = \case
   Anf.Return a -> do Emit RET; encodeAtom a
 
@@ -64,7 +56,7 @@ encodeAnf = \case
     Emit (INDEX i)
     Extend x $ encodeAnf body
 
-encodeAtom :: Atom -> M ()
+encodeAtom :: Anf.Atom -> M ()
 encodeAtom = \case
   Anf.AVar x -> do Emit ENV; encodeVar x
   Anf.ANum n -> do i <- Literal (Number n); Emit VAL; Emit (INDEX i)

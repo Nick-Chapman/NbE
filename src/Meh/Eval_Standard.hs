@@ -1,5 +1,5 @@
 
-module Eval(evaluate) where
+module Meh.Eval_Standard(evaluate) where
 
 import Control.Monad(ap,liftM)
 import Data.Map (Map)

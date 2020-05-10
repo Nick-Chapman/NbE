@@ -1,5 +1,6 @@
 
 module Cek(evaluate) where
+-- CEK Machine to evaluate expressions
 
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map

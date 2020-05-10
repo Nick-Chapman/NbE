@@ -1,5 +1,5 @@
 
-module Norm(normalize) where
+module Meh.Norm_StartingPoint(normalize) where
 
 import Control.Monad(ap,liftM,(>=>))
 import Ast

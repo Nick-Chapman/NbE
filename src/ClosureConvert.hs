@@ -1,5 +1,8 @@
 
-module ClosureConvert(evaluate,compile,execute) where
+module ClosureConvert(convert,execute) where
+-- Closure-converted-ANF code (CC code)
+-- Compiler("convert") from plain ANF
+-- Machine execution of CC code
 
 import Control.Monad(ap,liftM)
 import Data.Map (Map)
@@ -8,7 +11,7 @@ import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
 import Ast
-import qualified Cek5 as Anf(compile,Code(..),Atom(..))
+import qualified Anf(Code(..),Atom(..))
 
 data Result = Result Value
 
@@ -20,15 +23,8 @@ data Value
 
 instance Show Value where show = \case Number n -> show n; Closure{} -> "<closure>"
 
-evaluate :: Exp -> Result
-evaluate = execute . compile
-
-compile :: Exp -> Code
-compile = encode . Anf.compile
-
-
 ----------------------------------------------------------------------
--- definition of Closure-Converted Code (CC code)
+-- Closure-Converted Code (CC code)
 
 data Loc = LocArg Int | LocFree Int
 
@@ -72,25 +68,25 @@ indented hang = \case
 
 
 ----------------------------------------------------------------------
--- encode Anf to (Closure converted) Code
+-- convert Anf to (Closure converted) Code
 -- TODO: take advantage of multi apps & multi lambdas
 
-encode :: Anf.Code -> Code
-encode anf = runM (encodeAnf anf)
+convert :: Anf.Code -> Code
+convert anf = runM (convertAnf anf)
 
-encodeAnf :: Anf.Code -> M Code
-encodeAnf = \case
-  Anf.Return a -> Return <$> encodeAtom a
+convertAnf :: Anf.Code -> M Code
+convertAnf = \case
+  Anf.Return a -> Return <$> convertAtom a
 
   Anf.Tail func arg -> do
     func <- Lookup func
-    arg <- encodeAtom arg
+    arg <- convertAtom arg
     return $ Tail func [arg]
 
   Anf.LetAdd x (a1,a2) code -> do
-    a1 <- encodeAtom a1
-    a2 <- encodeAtom a2
-    code <- Extend x $ encodeAnf code
+    a1 <- convertAtom a1
+    a2 <- convertAtom a2
+    code <- Extend x $ convertAnf code
     return $ LetAdd (a1,a2) code
 
   Anf.LetLam x (var,body) code -> do
@@ -98,20 +94,20 @@ encodeAnf = \case
     free <- mapM Lookup fvs
     let arity = 1
     let locations = [ (y,LocFree i) | (y,i) <- zip fvs [0..] ]
-    body <- Reset locations $ Extend var $ encodeAnf body
-    code <- Extend x $ encodeAnf code
+    body <- Reset locations $ Extend var $ convertAnf body
+    code <- Extend x $ convertAnf code
     return $ LetLam {free,arity,body,code}
 
   Anf.LetCode x rhs follow -> do
     let fvs = Set.toList $ fvsBinding (x,follow)
     free <- mapM Lookup fvs
-    rhs <- encodeAnf rhs
+    rhs <- convertAnf rhs
     let locations = [ (y,LocFree i) | (y,i) <- zip fvs [0..] ]
-    follow <- Reset locations $ Extend x $ encodeAnf follow
+    follow <- Reset locations $ Extend x $ convertAnf follow
     return $ LetCode {free,rhs,follow}
 
-encodeAtom :: Anf.Atom -> M Atom
-encodeAtom = \case
+convertAtom :: Anf.Atom -> M Atom
+convertAtom = \case
   Anf.ANum n -> return $ ANum n
   Anf.AVar x -> ALoc <$> Lookup x
 

@@ -1,22 +1,20 @@
 
 module Main(main) where
+-- Run evaluators on a selected example
 
 import System.Environment (getArgs)
 import qualified Data.Map.Strict as Map
 
 import Ast
 import Examples(examples)
---import Eval_ExplicitSubst(evaluate)
---import Eval_Environment(evaluate)
---import Eval(evaluate)
---import Eval_Instrumented(evaluate)
---import qualified Cek(evaluate)
-import Cek4(evaluate)
-import qualified Cek5(compile,execute)
---import qualified BC1(compile,execute)
-import qualified ClosureConvert as CC(compile,execute)
+import qualified Evaluate as Eval(evaluate)
+import qualified Cek(evaluate)
+import qualified Anf(flatten)
+import qualified Cek_Anf(execute)
+import qualified BC1(encode,execute)
+import qualified ClosureConvert as CC(convert,execute)
 
---import Norm_Final(normalize)
+import Normalize(normalize)
 
 main :: IO ()
 main = do
@@ -24,25 +22,35 @@ main = do
   args <- getArgs
   let name = case args of [] -> defaultProg; [x] -> x; _ -> error (show args)
   let prog = maybe (error $ "unknown program: "++name) id (Map.lookup name examples)
-  demo "original" prog
-  --demo "optimized" (normalize prog)
+  stages "original" prog
+  stages "optimized" (normalize prog)
 
-demo :: String -> Exp -> IO ()
-demo tag exp = do
+stages :: String -> Exp -> IO ()
+stages tag exp = do
+  print "--------------------------------------------------"
   print tag
+  print "--------------------------------------------------"
   print exp
 
-  print "Eval"; print (evaluate exp)
+  print "Eval"; print (Eval.evaluate exp)
+  print "Cek"; print (Cek.evaluate exp)
 
-  print "CEK5"
-  let code = Cek5.compile exp
-  print code
-  print (Cek5.execute code)
+  print "compile: AST -> ANF"
+  let anf = Anf.flatten exp
+  print anf
 
-  --print "BC1"
-  --let code = BC1.compile exp
-  --print code; print (BC1.execute code)
+  print "Execute(ANF)..."
+  print (Cek_Anf.execute anf)
 
-  print "ClosureConverted"
-  let code = CC.compile exp
-  print code; print (CC.execute code)
+  print "encode: ANF -> ByteCode1"
+  let bc1 = BC1.encode anf
+  print bc1
+
+  print "Execute(ByteCode1)..."
+  print (BC1.execute bc1)
+
+  print "ClosureConvert: ANF -> CC"
+  let cc = CC.convert anf
+  print cc
+  print "Execute(CC)..."
+  print (CC.execute cc)

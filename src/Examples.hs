@@ -1,5 +1,6 @@
 
 module Examples(examples) where
+-- Various examples to play with when working on evaluators
 
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map

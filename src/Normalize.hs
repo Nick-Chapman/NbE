@@ -1,5 +1,6 @@
 
-module Norm_Final(normalize) where
+module Normalize(normalize) where
+-- Normalize an expression, using NbE ("normalization by evaluation")
 
 import Control.Monad(ap,liftM,(>=>))
 import Data.Map (Map)
