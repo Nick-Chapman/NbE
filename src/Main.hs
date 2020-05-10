@@ -20,7 +20,7 @@ import qualified ClosureConvert as CC(compile,execute)
 
 main :: IO ()
 main = do
-  let defaultProg = "dive"
+  let defaultProg = "thrice-thrice-dec"
   args <- getArgs
   let name = case args of [] -> defaultProg; [x] -> x; _ -> error (show args)
   let prog = maybe (error $ "unknown program: "++name) id (Map.lookup name examples)

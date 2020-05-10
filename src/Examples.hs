@@ -16,6 +16,7 @@ examples = Map.fromList
   , ("dub9", App dub (Num 9))
   , ("twice-dub-9", App (App twice dub) (Num 9))
   , ("thrice-dub-9", App (App thrice dub) (Num 9))
+  , ("thrice-thrice-dec", App (App (App thrice thrice) decrement) (Num 0))
 
   , ("dive", App dive (Num 9))
   , ("diveX", App diveX (Num 9))
@@ -26,6 +27,9 @@ identity = Lam "x" (Var "x")
 
 dub :: Exp
 dub = Lam "x" (add (Var "x") (Var "x"))
+
+decrement :: Exp
+decrement = Lam "x" (add (Var "x") (Num (-1)))
 
 twice :: Exp
 twice = Lam "f" (Lam "x" (App (Var "f") (App (Var "f") (Var "x"))))
