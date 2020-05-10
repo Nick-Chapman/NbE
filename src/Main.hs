@@ -2,6 +2,7 @@
 module Main(main) where
 -- Run evaluators on a selected example
 
+--import Control.Monad(when)
 import System.Environment (getArgs)
 import qualified Data.Map.Strict as Map
 
@@ -46,8 +47,9 @@ stages tag exp = do
   let anf = Anf.flatten exp
   print anf
 
-  print "execute(Anf.Code)..."
-  print (Cek_Anf.execute anf)
+  print "flatten: MultiAst.Exp -> MultiAnf.Code"
+  let manf = MultiAnf.flatten mexp
+  --print manf
 
   --print "encode: Anf.Code -> BC1.ByteCode"
   --let bc1 = BC1.encode anf
@@ -56,13 +58,12 @@ stages tag exp = do
   --print "execute(BC1.ByteCode)..."
   --print (BC1.execute bc1)
 
-  print "flatten: MultiAst.Exp -> MultiAnf.Code"
-  let manf = MultiAnf.flatten mexp
-  print manf
-
   print "closure-convert: Anf.Code -> CC.Code"
   let cc = CC.convert manf
   print cc
+
+  print "execute(Anf.Code)..."
+  print (Cek_Anf.execute anf)
 
   print "execute(CC.Code)..."
   print (CC.execute cc)

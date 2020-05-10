@@ -13,13 +13,13 @@ import qualified Data.Set as Set
 import Ast(Var)
 import qualified MultiAnf as Anf(Code(..),Atom(..))
 
-data Result = Result Value
+data Result = Result Value Counts
 
-instance Show Result where show (Result v) = unlines [ "value: " ++ show v ]
+instance Show Result where
+  show (Result v counts) =
+    unlines [ "value: " ++ show v, "counts:", show counts ]
 
-data Value
-  = Number Int
-  | Closure {fvs :: [Value], arity :: Int, body :: Code }
+data Value = Number Int | Closure {fvs :: [Value], arity :: Int, body :: Code }
 
 instance Show Value where show = \case Number n -> show n; Closure{} -> "<closure>"
 
@@ -164,7 +164,8 @@ type LocEnv = Map Var Loc
 ----------------------------------------------------------------------
 -- machine to execute the closure-converted-code
 
-type Machine {-m-} = (Control,Frame,Kont)
+type Machine {-m-} = (Counts,Control,Frame,Kont)
+data Counts  {-i-} = Counts (Map Micro Int)
 type Control {-c-} = Code
 data Frame   {-f-} = Frame { fvs :: [Value], args :: [Value] }
 data Kont    {-k-} = Kdone | Kbind { fvs :: [Value], code :: Code, kont :: Kont }
@@ -173,22 +174,37 @@ execute :: Code -> Result
 execute = run. install
 
 install :: Code -> Machine
-install code = (code,frame0,Kdone) where frame0 = Frame [] []
+install code = (counts0,code,frame0,Kdone) where frame0 = Frame [] []
 
 run :: Machine -> Result
-run (code0,f,k) = case code0 of
-  Return atom -> ret (atomic f atom) k
-  Tail func args -> enter (locate f func) (map (atomic f) args) k
-  LetAdd (a1,a2) code -> run (code, push (add (atomic f a1) (atomic f a2)) f, k)
-  LetLam {free,arity,body,code} -> run (code,push clo f,k)
-    where clo = Closure{fvs = map (locate f) free, arity, body}
-  LetCode{free,rhs,follow}-> run (rhs,f,k')
-    where k' = Kbind {fvs = map (locate f) free, code = follow, kont=k}
+run (i,code0,f,k) = case code0 of
+  Return atom -> ret i (atomic f atom) k
+  Tail func args -> enter i (locate f func) (map (atomic f) args) k
+  LetAdd (a1,a2) code -> run (tick [DoAddition] i, code, push (add (atomic f a1) (atomic f a2)) f, k)
+  LetLam {free,arity,body,code} -> run (tick [DoMakeClosure] i,code,push clo f,k) where clo = Closure{fvs = map (locate f) free, arity, body}
+  LetCode{free,rhs,follow}-> run (tick [DoPushContinuation] i, rhs,f,k') where k' = Kbind {fvs = map (locate f) free, code = follow, kont=k}
 
-ret :: Value -> Kont -> Result
-ret v = \case
-  Kdone -> Result v
-  Kbind {fvs,code,kont} -> run (code, Frame {fvs, args = [v]}, kont)
+ret :: Counts -> Value -> Kont -> Result
+ret i v = \case
+  Kdone -> Result v i'
+  Kbind {fvs,code,kont} -> run (i', code, Frame {fvs, args = [v]}, kont)
+  where i' = tick [DoReturn] i
+
+enter :: Counts -> Value -> [Value] -> Kont -> Result
+enter i func args k = case func of
+  Number{} -> error "cant enter a number"
+  clo@Closure{fvs,arity,body}
+    | arity == n -> do
+        run (tick [DoEnter] i, body, Frame {fvs,args}, k)
+    | arity < n -> do
+        let (myArgs,overArgs) = splitAt arity args
+        let k' = makeOverAppK overArgs k
+        run (tick [DoPushOverApp, DoEnter] i, body, Frame {fvs,args = myArgs}, k')
+    | otherwise -> do
+        ret (tick [DoMakePap] i) (makePap nMissing clo args) k
+    where
+      nMissing = arity - n
+      n = length args
 
 atomic :: Frame -> Atom -> Value
 atomic f = \case
@@ -207,22 +223,6 @@ add :: Value -> Value -> Value
 add (Number n1) (Number n2) = Number (n1+n2)
 add _ _ = error "can't add non-numbers"
 
-enter :: Value -> [Value] -> Kont -> Result
-enter func args k = case func of
-  Number{} -> error "cant enter a number"
-  clo@Closure{fvs,arity,body}
-    | arity == n -> do
-        run (body, Frame {fvs,args}, k)
-    | arity < n -> do
-        let (myArgs,overArgs) = splitAt arity args
-        let k' = makeOverAppK overArgs k
-        run (body, Frame {fvs,args = myArgs}, k')
-    | otherwise -> do
-        ret (makePap nMissing clo args) k
-    where
-      nMissing = arity - n
-      n = length args
-
 makeOverAppK :: [Value] -> Kont -> Kont
 makeOverAppK overArgs kont = Kbind {fvs=overArgs, code, kont}
   where
@@ -240,3 +240,30 @@ makePap nMissing clo argsSoFar = clo2
 
 nth :: Show a => String -> [a] -> Int -> a
 nth tag xs i = if i >= length xs then error (show (tag,i,xs)) else xs !! i
+
+
+----------------------------------------------------------------------
+-- instrumentation
+
+tick :: [Micro] -> Counts -> Counts
+tick mics i = foldl countMicro i mics
+
+instance Show Counts where
+  show (Counts m) =
+    unlines $ map (\(c,i) -> unwords ["-", show c, show i]) $ Map.toList m
+
+counts0 :: Counts
+counts0 = Counts Map.empty
+
+countMicro :: Counts -> Micro -> Counts
+countMicro (Counts mm) cl = Counts (Map.insertWith (+) cl 1 mm)
+
+data Micro
+  = DoReturn
+  | DoEnter
+  | DoPushContinuation
+  | DoPushOverApp
+  | DoAddition
+  | DoMakeClosure
+  | DoMakePap
+  deriving (Show,Eq,Ord)

@@ -13,10 +13,9 @@ instance Show Result where
   show (Result v counts) =
     unlines [ "value: " ++ show v, "counts:", show counts ]
 
-data Value = Number Int | Clo Closure
-data Closure = Closure Env Var Anf.Code
+data Value = Number Int | Closure Env Var Anf.Code
 
-instance Show Value where show = \case Number n -> show n; Clo{} -> "<closure>"
+instance Show Value where show = \case Number n -> show n; Closure{} -> "<closure>"
 
 ----------------------------------------------------------------------
 -- run time
@@ -39,27 +38,27 @@ install c = (counts0, c, Map.empty, Kdone)
 -- | run a machine unti the final value is calculated
 run :: Machine -> Result
 run (i,c,q,k) = case c of
-  Anf.Return a -> send (tick [DoReturn] i) (atomic q a) k
-  Anf.Tail f a -> jump i q f a k
-  Anf.LetCode x rhs body -> run (tick [DoPushContinuation] i, rhs, q, Kbind q x body k)
+  Anf.Return a -> ret i (atomic q a) k
+  Anf.Tail f a -> enter (tick [DoEnter] i) (look f q) (atomic q a) k
   Anf.LetAdd x (a1,a2) c -> run (tick [DoAddition] i, c, q', k) where q' = Map.insert x (add (atomic q a1) (atomic q a2)) q
-  Anf.LetLam x (fx,fc) c -> run (tick [DoMakeClosure] i, c, q', k) where q' = Map.insert x (Clo (Closure q fx fc)) q
+  Anf.LetLam x (fx,fc) c -> run (tick [DoMakeClosure] i, c, q', k) where q' = Map.insert x (Closure q fx fc) q
+  Anf.LetCode x rhs body -> run (tick [DoPushContinuation] i, rhs, q, Kbind q x body k)
 
-send :: Counts -> Value -> Kont -> Result
-send i v = \case
-  Kdone -> Result v i
-  Kbind q x c k -> run (i, c,q',k) where q' = Map.insert x v q
+ret :: Counts -> Value -> Kont -> Result
+ret i v = \case
+  Kdone -> Result v i'
+  Kbind q x c k -> run (i', c,q',k) where q' = Map.insert x v q
+  where i' = tick [DoReturn] i
+
+enter :: Counts -> Value -> Value -> Kont -> Result
+enter i func arg k = case func of
+  Number{} -> error "cant enter a number"
+  Closure q formal body -> run (i, body, q', k) where q' = Map.insert formal arg q
 
 atomic :: Env -> Anf.Atom -> Value
 atomic q = \case
   Anf.AVar x -> look x q
   Anf.ANum n -> Number n
-
-jump :: Counts -> Env -> Var -> Anf.Atom -> Kont -> Result
-jump i q f a k = run (tick [DoJump] i, cf, q', k)
-  where
-    Clo (Closure qf xf cf) = look f q -- will fail if not a Closure
-    q' = Map.insert xf (atomic q a) qf
 
 look :: Var -> Env -> Value
 look x q = maybe (error $ "runtime-lookup:" ++ x) id (Map.lookup x q)
@@ -87,7 +86,7 @@ countMicro (Counts mm) cl = Counts (Map.insertWith (+) cl 1 mm)
 
 data Micro
   = DoReturn
-  | DoJump
+  | DoEnter
   | DoPushContinuation
   | DoAddition
   | DoMakeClosure
