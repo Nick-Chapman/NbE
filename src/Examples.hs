@@ -21,7 +21,9 @@ examples = Map.fromList
   , ("thrice-thrice", thrice_thrice_example)
   , ("dive", App dive (Num 9))
   , ("diveX", App diveX (Num 9))
-  , ("factorial5", App factorial (Num 5))
+  , ("fact5", App fact (Num 5))
+  , ("triangle", App triangle (Num 100))
+  , ("triangleTR", App triangleTR (Num 100))
   ]
 
 identity :: Exp
@@ -67,13 +69,33 @@ mkLet :: Var -> Exp -> Exp -> Exp
 mkLet = Let
 
 
-factorial :: Exp
-factorial =
+fact :: Exp
+fact =
   Fix "fact"
   (Lam "n"
     (Ite (leq (Var "n") (Num 0))
       (Num 1)
       (multiply (Var "n") (App (Var "fact") (subtract (Var "n") (Num 1))))))
+
+
+triangle :: Exp
+triangle =
+  Fix "triangle"
+  (Lam "n"
+    (Ite (leq (Var "n") (Num 0))
+      (Num 0)
+      (add (Var "n") (App (Var "triangle") (subtract (Var "n") (Num 1))))))
+
+triangleTR :: Exp
+triangleTR =
+  App
+  (Fix "triangleTR"
+   (Lam "acc"
+     (Lam "n"
+       (Ite (leq (Var "n") (Num 0))
+         (Var "acc")
+         (App (App (Var "triangleTR") (add (Var "acc") (Var "n"))) (subtract (Var "n") (Num 1)))))))
+  (Num 0)
 
 
 add :: Exp -> Exp -> Exp

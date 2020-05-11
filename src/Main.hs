@@ -22,7 +22,7 @@ import qualified MultiAnf(flatten)
 
 main :: IO ()
 main = do
-  let defaultProg = "factorial5"
+  let defaultProg = "fact5"
   args <- getArgs
   let name = case args of [] -> defaultProg; [x] -> x; _ -> error (show args)
   let prog = maybe (error $ "unknown program: "++name) id (Map.lookup name examples)
