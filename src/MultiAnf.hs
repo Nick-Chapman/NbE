@@ -1,5 +1,5 @@
 
-module MultiAnf(flatten, Code(..), Atom(..)) where
+module MultiAnf(flatten, Op(..), Code(..), Atom(..)) where
 -- (Multi-app/lam) ANF code: flattened (multi-app/lam) expressions
 -- Compiler("flatten") from MultiAst
 
@@ -21,26 +21,13 @@ data Code -- flattened expression
   = Return Atom
   | Tail Var [Atom]
   | LetCode Var Code Code
-  | LetAdd Var (Atom,Atom) Code
+  | LetOp Var Op (Atom,Atom) Code
   | LetLam Var ([Var],Code) Code
+  | LetFix Var ([Var],Code) Code
+  | Branch Atom Code Code
 
 instance Show Atom where show = \case ANum n -> show n; AVar s -> s
 instance Show Code where show = unlines . pretty
-
--- | basic pretty print, see nested lets as in a functional program
-_pretty :: Code -> [String]
-_pretty = \case
-  Return a -> [show a]
-  Tail xf a -> [xf ++ " " ++ show a]
-  LetCode x rhs follow ->
-    indented ("let " ++ x ++ " =") (pretty rhs)
-    ++ pretty follow
-  LetAdd x (a1,a2) code ->
-    indented ("let " ++ x ++ " =") [show a1 ++ " + " ++ show a2]
-    ++ pretty code
-  LetLam x (formals,body) code ->
-    indented ("let " ++ x ++ " = \\[" ++ comma formals ++ "].") (pretty body)
-    ++ pretty code
 
 -- | pretty print, showing explicit continutaion management: push, return, (and tail)
 pretty :: Code -> [String]
@@ -49,17 +36,22 @@ pretty = \case
   Tail xf a -> ["tail: " ++ xf ++ " " ++ show a]
   LetCode x rhs follow ->
     indented ("push: " ++ x ++  " ->") (pretty follow) ++ pretty rhs
-  LetAdd x (a1,a2) code ->
-    indented ("let " ++ x ++ " =") [show a1 ++ " + " ++ show a2]
+  LetOp x op (a1,a2) code ->
+    indented ("let " ++ x ++ " =") [show (op,a1,a2)]
     ++ pretty code
-  LetLam x (formals,body) code ->
-    indented ("let " ++ x ++ " = \\[" ++ comma formals ++ "].") (pretty body)
+  LetLam y (xs,body) code ->
+    indented ("let " ++ y ++ " = \\[" ++ comma xs ++ "].") (pretty body)
     ++ pretty code
-
+  LetFix f (xs,body) code ->
+    indented ("letrec " ++ f ++ " = \\[" ++ comma xs ++ "].") (pretty body)
+    ++ pretty code
+  Branch a1 c2 c3 ->
+    ["if " ++ show a1]
+    ++ indented "then" (pretty c2)
+    ++ indented "else" (pretty c3)
 
 comma :: [String] -> String
 comma = intercalate ","
-
 
 indented :: String -> [String] -> [String]
 indented hang = \case
@@ -80,13 +72,13 @@ codifyAs :: Maybe Var -> Exp -> M Code
 codifyAs mx = \case
   Num n -> do
     return $ Return $ ANum n
-  AddOp -> do
-    codeAdd
-  SaturatedAdd e1 e2 -> do
+  Prim op -> do
+    codePrim op
+  SatPrim e1 op e2 -> do
     a1 <- atomize $ codify e1
     a2 <- atomize $ codify e2
     name <- fresh mx
-    Wrap (LetAdd name (a1,a2)) $ return $ Return $ AVar name
+    Wrap (LetOp name op (a1,a2)) (return $ Return $ AVar name)
   Var x -> do
     a <- Lookup x
     return $ Return a
@@ -97,14 +89,27 @@ codifyAs mx = \case
     body <- ModEnv mod $ Reset (codifyAs bodyName body)
     Wrap (LetLam name (formals,body)) (return $ Return $ AVar name)
   App func args -> do
-    aFunc <- atomize $ Reset (codify func)
-    aArgs <- forM args $ \arg -> atomize $ Reset (codify arg)
+    aFunc <- atomize $ Reset (codify func) -- why reset?
+    --aArgs <- forM args $ \arg -> atomize $ Reset (codify arg)
+    aArgs <- forM args $ (atomize . codify)
     case aFunc of
       ANum{} -> error "application of number detected"
       AVar f -> return $ Tail f aArgs
   Let x rhs body -> do
     a <- atomizeAs (Just x) $ codifyAs (Just x) rhs
     ModEnv (Map.insert x a) $ codifyAs mx body
+  Fix f (Lam xs body) -> do
+    let mod = Map.union (Map.fromList [ (x,AVar x) | x <- f:xs ])
+    body <- ModEnv mod $ Reset (codify body)
+    Wrap (LetFix f (xs,body)) (return $ Return $ AVar f)
+  Fix{} -> error "fix of non-lambda detected"
+  Ite e1 e2 e3 -> do
+    let thenName = fmap (++"-then") mx
+    let elseName = fmap (++"-else") mx
+    a1 <- atomize $ codify e1
+    c2 <- Reset (codifyAs thenName e2)
+    c3 <- Reset (codifyAs elseName e3)
+    return $ Branch a1 c2 c3
   where
     codify = codifyAs Nothing
     atomize = atomizeAs Nothing
@@ -138,14 +143,15 @@ fresh = \case
   Just var -> return var
   Nothing -> Fresh
 
-codeAdd :: M Code
-codeAdd = do
+
+codePrim :: Op -> M Code
+codePrim op = do
   xAdd <- Fresh
   xAdd1 <- Fresh
   x1 <- Fresh
   x2 <- Fresh
   xRes <- Fresh
-  return $ LetLam xAdd ([x1],LetLam xAdd1 ([x2], LetAdd xRes (AVar x1,AVar x2) (Return (AVar xRes))) (Return (AVar xAdd1))) (Return (AVar xAdd))
+  return $ LetLam xAdd ([x1],LetLam xAdd1 ([x2], LetOp xRes op (AVar x1,AVar x2) (Return (AVar xRes))) (Return (AVar xAdd1))) (Return (AVar xAdd))
 
 
 instance Functor M where fmap = liftM

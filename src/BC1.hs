@@ -44,17 +44,22 @@ encodeAnf = \case
     Emit (INDEX i)
     encodeAnf rhs
 
-  Anf.LetAdd x (a1,a2) body -> do
+{-  Anf.LetAdd x (a1,a2) body -> do
     Emit ADD
     encodeAtom a1
     encodeAtom a2
     Extend x $ encodeAnf body
-
+-}
   Anf.LetLam x (xf,xc) body -> do
     i <- Define (Extend xf $ encodeAnf xc)
     Emit CLOSE
     Emit (INDEX i)
     Extend x $ encodeAnf body
+
+  Anf.LetFix{} -> undefined
+  Anf.Branch{} -> undefined
+  Anf.LetOp{} -> undefined
+
 
 encodeAtom :: Anf.Atom -> M ()
 encodeAtom = \case

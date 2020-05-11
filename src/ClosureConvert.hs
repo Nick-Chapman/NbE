@@ -10,7 +10,7 @@ import Data.Set (Set,(\\))
 import qualified Data.Map.Strict as Map
 import qualified Data.Set as Set
 
-import Ast(Var)
+import Ast(Op(..),Var)
 import qualified MultiAnf as Anf(Code(..),Atom(..))
 
 data Result = Result Value Counts
@@ -19,9 +19,16 @@ instance Show Result where
   show (Result v counts) =
     unlines [ "value: " ++ show v, "counts:", show counts ]
 
-data Value = Number Int | Closure {fvs :: [Value], arity :: Int, body :: Code }
+data Value
+  = Number Int
+  | Boolean Bool
+  | Closure {fvs :: [Value], arity :: Int, body :: Code }
 
-instance Show Value where show = \case Number n -> show n; Closure{} -> "<closure>"
+instance Show Value where
+  show = \case
+    Number n -> show n
+    Boolean b -> show b
+    Closure{} -> "<closure>"
 
 ----------------------------------------------------------------------
 -- Closure-Converted Code (CC code)
@@ -33,10 +40,10 @@ data Atom = ALoc Loc | ANum Int
 data Code
   = Return Atom
   | Tail Loc [Atom]
-  | LetAdd (Atom,Atom) Code
-  | LetLam { free :: [Loc], arity :: Int, body :: Code, code :: Code }
-  | LetCode { free :: [Loc], rhs :: Code, follow :: Code }
-
+  | LetContinue { freeFollow :: [Loc], rhs :: Code, follow :: Code }
+  | LetOp Op (Atom,Atom) Code
+  | LetClose { freeBody :: [Loc], arity :: Int, body :: Code, code :: Code }
+  | Branch Atom Code Code
 
 ----------------------------------------------------------------------
 -- pretty print CC code
@@ -51,14 +58,23 @@ instance Show Code where show = unlines . pretty
 
 pretty :: Code -> [String]
 pretty = \case
-  Return a -> ["return: " ++ show a]
-  Tail func args -> ["tail: " ++ show func ++ " " ++ show args]
-  LetCode{free,rhs,follow} ->
-    indented ("push-k: " ++ show free ++  " ->") (pretty follow) ++ pretty rhs
-  LetAdd (a1,a2) c ->
-    ("let-add: " ++ show a1 ++ " + " ++ show a2) : pretty c
-  LetLam{free,arity,body,code} ->
-    indented ("let-lam: " ++ show free ++ " \\" ++ show arity ++ ".") (pretty body) ++ pretty code
+  Return a ->
+    ["return: " ++ show a]
+  Tail func args ->
+    ["tail: " ++ show func ++ " " ++ show args]
+  LetContinue{freeFollow,rhs,follow} ->
+    indented ("push-k: " ++ show freeFollow ++  " ->") (pretty follow)
+    ++ pretty rhs
+  LetOp op (a1,a2) code ->
+    ["let-op: " ++ show (op,a1,a2)]
+    ++ pretty code
+  LetClose{freeBody,arity,body,code} ->
+    indented ("let-close: " ++ show freeBody ++ " \\" ++ show arity ++ ".") (pretty body)
+    ++ pretty code
+  Branch a1 c2 c3 ->
+    ["if " ++ show a1]
+    ++ indented "then" (pretty c2)
+    ++ indented "else" (pretty c3)
 
 indented :: String -> [String] -> [String]
 indented hang = \case
@@ -69,7 +85,6 @@ indented hang = \case
 
 ----------------------------------------------------------------------
 -- convert Anf to (Closure converted) Code
--- TODO: take advantage of multi apps & multi lambdas
 
 convert :: Anf.Code -> Code
 convert anf = runM (convertAnf anf)
@@ -83,28 +98,43 @@ convertAnf = \case
     args <- mapM convertAtom args
     return $ Tail func args
 
-  Anf.LetAdd x (a1,a2) code -> do
+  Anf.LetOp x op (a1,a2) code -> do
     a1 <- convertAtom a1
     a2 <- convertAtom a2
     code <- Extend [x] $ convertAnf code
-    return $ LetAdd (a1,a2) code
+    return $ LetOp op (a1,a2) code
 
-  Anf.LetLam x (formals,body) code -> do
-    let fvs = Set.toList $ fvsBinding (formals,body)
-    free <- mapM Lookup fvs
-    let arity = length formals
-    let locations = [ (y,LocFree i) | (y,i) <- zip fvs [0..] ]
-    body <- Reset locations $ Extend formals $ convertAnf body
-    code <- Extend [x] $ convertAnf code
-    return $ LetLam {free,arity,body,code}
+  Anf.LetLam y (xs,body) code -> do
+    let fvs = Set.toList $ fvsBinding (xs,body)
+    let arity = length xs
+    let locations = [ (v,LocFree i) | (v,i) <- zip fvs [0..] ]
+    freeBody <- Extend ["_self"] $ mapM Lookup fvs
+    body <- Reset locations $ Extend xs $ convertAnf body
+    code <- Extend [y] $ convertAnf code
+    return $ LetClose {freeBody,arity,body,code}
 
-  Anf.LetCode x rhs follow -> do
-    let fvs = Set.toList $ fvsBinding ([x],follow)
-    free <- mapM Lookup fvs
+  Anf.LetFix f (xs,body) code -> do
+    let fvs = Set.toList $ fvsBinding (xs,body)
+    let arity = length xs
+    let locations = [ (v,LocFree i) | (v,i) <- zip fvs [0..] ]
+    freeBody <- Extend [f] $ mapM Lookup fvs
+    body <- Reset locations $ Extend xs $ convertAnf body
+    code <- Extend [f] $ convertAnf code
+    return $ LetClose {freeBody,arity,body,code}
+
+  Anf.Branch a1 c2 c3 -> do
+    a1 <- convertAtom a1
+    c2 <- convertAnf c2
+    c3 <- convertAnf c3
+    return $ Branch a1 c2 c3
+
+  Anf.LetCode y rhs follow -> do
+    let fvs = Set.toList $ fvsBinding ([y],follow)
+    let locations = [ (v,LocFree i) | (v,i) <- zip fvs [0..] ]
+    freeFollow <- mapM Lookup fvs
     rhs <- convertAnf rhs
-    let locations = [ (y,LocFree i) | (y,i) <- zip fvs [0..] ]
-    follow <- Reset locations $ Extend [x] $ convertAnf follow
-    return $ LetCode {free,rhs,follow}
+    follow <- Reset locations $ Extend [y] $ convertAnf follow
+    return $ LetContinue {freeFollow,rhs,follow}
 
 convertAtom :: Anf.Atom -> M Atom
 convertAtom = \case
@@ -119,9 +149,11 @@ fvsCode :: Anf.Code -> Set Var
 fvsCode = \case
   Anf.Return a -> fvsAtom a
   Anf.Tail func args -> Set.singleton func <> Set.unions (map fvsAtom args)
-  Anf.LetAdd x (a1,a2) code -> fvsAtom a1 <> fvsAtom a2 <> fvsBinding ([x],code)
-  Anf.LetLam x (vars,body) code -> fvsBinding (vars,body) <> fvsBinding ([x],code)
   Anf.LetCode x rhs follow -> fvsCode rhs <> fvsBinding ([x],follow)
+  Anf.LetOp x _ (a1,a2) code -> fvsAtom a1 <> fvsAtom a2 <> fvsBinding ([x],code)
+  Anf.LetLam y (xs,body) code -> fvsBinding (xs,body) <> fvsBinding ([y],code)
+  Anf.LetFix f (xs,body) code -> fvsBinding (f:xs,body) <> fvsBinding ([f],code)
+  Anf.Branch a1 c2 c3 -> fvsAtom a1 <> fvsCode c2 <> fvsCode c3
 
 fvsAtom :: Anf.Atom -> Set Var
 fvsAtom = \case
@@ -178,11 +210,31 @@ install code = (counts0,code,frame0,Kdone) where frame0 = Frame [] []
 
 run :: Machine -> Result
 run (i,code0,f,k) = case code0 of
-  Return atom -> ret i (atomic f atom) k
-  Tail func args -> enter i (locate f func) (map (atomic f) args) k
-  LetAdd (a1,a2) code -> run (tick [DoAddition] i, code, push (add (atomic f a1) (atomic f a2)) f, k)
-  LetLam {free,arity,body,code} -> run (tick [DoMakeClosure] i,code,push clo f,k) where clo = Closure{fvs = map (locate f) free, arity, body}
-  LetCode{free,rhs,follow}-> run (tick [DoPushContinuation] i, rhs,f,k') where k' = Kbind {fvs = map (locate f) free, code = follow, kont=k}
+
+  Return atom ->
+    ret i (atomic f atom) k
+
+  Tail func args ->
+    enter i (locate f func) (map (atomic f) args) k
+
+  LetContinue{freeFollow,rhs,follow} ->
+    run (tick [DoPushContinuation] i, rhs,f,k')
+    where
+      k' = Kbind {fvs = map (locate f) freeFollow, code = follow, kont=k}
+
+  LetOp op (a1,a2) code ->
+    run (tick [DoPrim op] i, code, f', k)
+    where
+      f' = push (doOp op (atomic f a1) (atomic f a2)) f
+
+  LetClose {freeBody,arity,body,code} ->
+    run (tick [DoMakeClosure] i, code, f', k)
+    where
+      f' = push clo f
+      clo = Closure {fvs = map (locate f') freeBody, arity, body}
+
+  Branch a1 c2 c3 ->
+    run (tick [DoBranch] i, branch c2 c3 (atomic f a1), f, k)
 
 ret :: Counts -> Value -> Kont -> Result
 ret i v = \case
@@ -193,6 +245,7 @@ ret i v = \case
 enter :: Counts -> Value -> [Value] -> Kont -> Result
 enter i func args k = case func of
   Number{} -> error "cant enter a number"
+  Boolean{} -> error "cant enter a boolean"
   clo@Closure{fvs,arity,body}
     | arity == n -> do
         run (tick [DoEnter] i, body, Frame {fvs,args}, k)
@@ -205,6 +258,12 @@ enter i func args k = case func of
     where
       nMissing = arity - n
       n = length args
+
+branch :: Code -> Code -> Value -> Code
+branch c2 c3 = \case
+  Boolean True -> c2
+  Boolean False -> c3
+  _ -> error "cant branch on a non boolean"
 
 atomic :: Frame -> Atom -> Value
 atomic f = \case
@@ -219,9 +278,22 @@ locate Frame{fvs,args} = \case
 push :: Value -> Frame -> Frame
 push v f@Frame{args} = f { args = v : args }
 
-add :: Value -> Value -> Value
+doOp :: Op -> Value -> Value -> Value
+doOp = \case Add -> add; Sub -> sub; Mul -> mul; Leq -> leq
+
+add,sub,mul,leq :: Value -> Value -> Value
+
 add (Number n1) (Number n2) = Number (n1+n2)
 add _ _ = error "can't add non-numbers"
+
+sub (Number n1) (Number n2) = Number (n1-n2)
+sub _ _ = error "can't sub non-numbers"
+
+mul (Number n1) (Number n2) = Number (n1*n2)
+mul _ _ = error "can't mul non-numbers"
+
+leq (Number n1) (Number n2) = Boolean (n1 <= n2)
+leq _ _ = error "can't leq non-numbers"
 
 makeOverAppK :: [Value] -> Kont -> Kont
 makeOverAppK overArgs kont = Kbind {fvs=overArgs, code, kont}
@@ -263,7 +335,8 @@ data Micro
   | DoEnter
   | DoPushContinuation
   | DoPushOverApp
-  | DoAddition
+  | DoPrim Op
   | DoMakeClosure
   | DoMakePap
+  | DoBranch
   deriving (Show,Eq,Ord)

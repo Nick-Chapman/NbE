@@ -22,7 +22,7 @@ import qualified MultiAnf(flatten)
 
 main :: IO ()
 main = do
-  let defaultProg = "thrice-thrice"
+  let defaultProg = "factorial5"
   args <- getArgs
   let name = case args of [] -> defaultProg; [x] -> x; _ -> error (show args)
   let prog = maybe (error $ "unknown program: "++name) id (Map.lookup name examples)
@@ -36,10 +36,6 @@ stages tag exp = do
   print "--------------------------------------------------"
   print exp
 
-  print "trans: Ast.Exp -> MultiAst.Exp"
-  let mexp = MultiAst.trans exp
-  print mexp
-
   print "Eval"; print (Eval.evaluate exp)
   print "Cek"; print (Cek.evaluate exp)
 
@@ -47,9 +43,24 @@ stages tag exp = do
   let anf = Anf.flatten exp
   print anf
 
+  print "execute(Anf.Code)..."
+  print (Cek_Anf.execute anf)
+
+  print "trans: Ast.Exp -> MultiAst.Exp"
+  let mexp = MultiAst.trans exp
+  print mexp
+
   print "flatten: MultiAst.Exp -> MultiAnf.Code"
   let manf = MultiAnf.flatten mexp
-  --print manf
+  print manf
+
+  print "closure-convert: Anf.Code -> CC.Code"
+  let cc = CC.convert manf
+  print cc
+
+  print "execute(CC.Code)..."
+  print (CC.execute cc)
+
 
   --print "encode: Anf.Code -> BC1.ByteCode"
   --let bc1 = BC1.encode anf
@@ -58,12 +69,3 @@ stages tag exp = do
   --print "execute(BC1.ByteCode)..."
   --print (BC1.execute bc1)
 
-  print "closure-convert: Anf.Code -> CC.Code"
-  let cc = CC.convert manf
-  print cc
-
-  print "execute(Anf.Code)..."
-  print (Cek_Anf.execute anf)
-
-  print "execute(CC.Code)..."
-  print (CC.execute cc)

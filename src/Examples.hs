@@ -2,6 +2,8 @@
 module Examples(examples) where
 -- Various examples to play with when working on evaluators
 
+import Prelude hiding (subtract)
+
 import Data.Map (Map)
 import qualified Data.Map.Strict as Map
 import Ast
@@ -17,9 +19,9 @@ examples = Map.fromList
   , ("dub9", App dub (Num 9))
   , ("thrice", App (App thrice dub) (Num 9))
   , ("thrice-thrice", thrice_thrice_example)
-
   , ("dive", App dive (Num 9))
   , ("diveX", App diveX (Num 9))
+  , ("factorial5", App factorial (Num 5))
   ]
 
 identity :: Exp
@@ -59,11 +61,33 @@ diveX = Lam "arg" (
   App (App (Var "thrice") (App (Var "increase") (add (Var "arg") (Num 1)))) (Num 3)))))
 
 
-add :: Exp -> Exp -> Exp
-add = SaturatedAdd
---add e1 e2 = App (App AddOp e1) e2
 
 mkLet :: Var -> Exp -> Exp -> Exp
 --mkLet x rhs body = App (Lam x body) rhs
 mkLet = Let
 
+
+factorial :: Exp
+factorial =
+  Fix "fact"
+  (Lam "n"
+    (Ite (leq (Var "n") (Num 0))
+      (Num 1)
+      (multiply (Var "n") (App (Var "fact") (subtract (Var "n") (Num 1))))))
+
+
+add :: Exp -> Exp -> Exp
+add = prim2 Add
+
+subtract :: Exp -> Exp -> Exp
+subtract = prim2 Sub
+
+multiply :: Exp -> Exp -> Exp
+multiply = prim2 Mul
+
+leq :: Exp -> Exp -> Exp
+leq = prim2 Leq
+
+prim2 :: Op -> Exp -> Exp -> Exp
+--prim2 op e1 e2 = App (App (Prim op) e1) e2
+prim2 op e1 e2 = SatPrim e1 op e2

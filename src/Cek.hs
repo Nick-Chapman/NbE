@@ -2,7 +2,7 @@
 module Cek(evaluate) where
 -- CEK Machine to evaluate expressions
 
-import Data.Map (Map)
+import Data.Map (Map,insert)
 import qualified Data.Map.Strict as Map
 import Ast
 
@@ -12,8 +12,14 @@ instance Show Result where
   show (Result v counts) =
     unlines [ "value: " ++ show v, "counts:", show counts ]
 
-data Value = Number Int | Clo Closure | Vadd0 | Vadd1 Value deriving (Show)
-data Closure = Closure Env Var Exp deriving (Show)
+data Value
+  = Number Int
+  | Boolean Bool
+  | Closure Env Var Exp
+  | Fixed Env Var Exp
+  | Vprim0 Op
+  | Vprim1 Op Value
+  deriving (Show)
 
 
 type Machine {-m-} = (Counts,Control,Env,Kont)
@@ -22,11 +28,13 @@ data Control {-c-} = CE Exp | CV Value deriving (Show)
 type Env     {-q-} = Map Var Value
 data Kont    {-k-}
   = Kdone
+  | Kbind Env Var Exp Kont
+  | Kif Env Exp Exp Kont
   | Karg Env Exp Kont
   | Kfun Value Kont
-  | Kadd1 Env Exp Kont
-  | Kadd2 Value Kont
-  | Kbind Env Var Exp Kont
+  | Kfix Value Kont
+  | Kprim0 Env Op Exp Kont
+  | Kprim1 Value Op Kont
   deriving (Show)
 
 
@@ -52,22 +60,35 @@ step m@(i,e,q,k) = step' (tick (micsM m) i,e,q,k)
 step' :: Machine -> Machine
 step' = \case
   (i, CE (Num n), q, k)                         -> (i, CV (Number n), q, k)
-  (i, CE (SaturatedAdd e1 e2), q, k)            -> (i, CE e1, q, Kadd1 q e2 k)
-  (i, CE AddOp, q, k)                           -> (i, CV Vadd0, q, k)
+  (i, CE (Prim op), q, k)                       -> (i, CV (Vprim0 op), q, k)
+  (i, CE (SatPrim e1 op e2), q, k)              -> (i, CE e1, q, Kprim0 q op e2 k)
   (i, CE (Var x), q, k)                         -> (i, CV (look x q), q, k)
-  (i, CE (Lam x body), q, k)                    -> (i, CV (Clo (Closure q x body)), q, k)
+  (i, CE (Lam x body), q, k)                    -> (i, CV (Closure q x body), q, k)
   (i, CE (App e1 e2), q, k)                     -> (i, CE e1, q, Karg q e2 k)
   (i, CE (Let x rhs body), q, k)                -> (i, CE rhs, q, Kbind q x body k)
+  (i, CE (Fix x body), q, k)                    -> (i, CV (Fixed q x body), q, k)
+  (i, CE (Ite e1 e2 e3), q, k)                  -> (i, CE e1, q, Kif q e2 e3 k)
 
   (_, CV _, _, Kdone)                           -> error "stepping a finished machine"
+  (i, CV v, _, Kbind q x e k)                   -> (i, CE e, insert x v q, k)
+
+  (i, CV v, _, Kprim0 q op e k)                 -> (i, CE e, q, Kprim1 v op k)
+  (i, CV v, q, Kprim1 v1 op k)                  -> (tick [DoComp op] i, CV (doOp op v1 v), q, k)
+
+  (i, CV (Boolean True),  _, Kif q e _ k)       -> (i, CE e, q, k)
+  (i, CV (Boolean False), _, Kif q _ e k)       -> (i, CE e, q, k)
+  (_, CV _, _, Kif{})                           -> error "cant test a non-boolean"
+
   (i, CV v, _, Karg q e k)                      -> (i, CE e, q, Kfun v k)
-  (_, CV _, _, Kfun Number{} _)                 -> error "cant apply a non-function"
-  (i, CV v, _, Kfun (Clo (Closure q x e)) k)    -> (i, CE e, Map.insert x v q, k)
-  (i, CV v, q, Kfun (Vadd0{}) k)                -> (i, CV (Vadd1 v), q, k)
-  (i, CV v2, q, Kfun (Vadd1 v1) k)              -> (tick [DoAddition] i, CV (add v1 v2), q, k)
-  (i, CV v1, _, Kadd1 q e k)                    -> (i, CE e, q, Kadd2 v1 k)
-  (i, CV v2, q, Kadd2 v1 k)                     -> (tick [DoAddition] i, CV (add v1 v2), q, k)
-  (i, CV v, _, Kbind q x e k)                   -> (i, CE e, Map.insert x v q, k)
+  (_, CV _, _, Kfun Number{} _)                 -> error "cant apply a number"
+  (_, CV _, _, Kfun Boolean{} _)                -> error "cant apply a boolean"
+  (i, CV v, q, Kfun (Vprim0 op) k)              -> (i, CV (Vprim1 op v), q, k)
+  (i, CV v, q, Kfun (Vprim1 op v1) k)           -> (tick [DoComp op] i, CV (doOp op v1 v), q, k)
+  (i, CV v, _, Kfun (Closure q x e) k)          -> (i, CE e, insert x v q, k)
+  (i, CV v, _, Kfun (fixed@(Fixed q x e)) k)    -> (i, CE e, insert x fixed q, Kfix v k)
+
+  (i, CV (Closure q x e), _, Kfix v k)          -> (i, CE e, insert x v q, k)
+  (_, CV _, _, Kfix{})                          -> error "cant fix a non-closure"
 
 
 -- | The micro steps about to be taken, from a given machine state
@@ -80,31 +101,48 @@ micsM = \case
 look :: Var -> Env -> Value
 look x env = maybe (error $ "lookup:" ++ x) id (Map.lookup x env)
 
-add :: Value -> Value -> Value
+doOp :: Op -> Value -> Value -> Value
+doOp = \case Add -> add; Sub -> sub; Mul -> mul; Leq -> leq
+
+add,sub,mul,leq :: Value -> Value -> Value
+
 add (Number n1) (Number n2) = Number (n1+n2)
 add _ _ = error "can't add non-numbers"
+
+sub (Number n1) (Number n2) = Number (n1-n2)
+sub _ _ = error "can't sub non-numbers"
+
+mul (Number n1) (Number n2) = Number (n1*n2)
+mul _ _ = error "can't mul non-numbers"
+
+leq (Number n1) (Number n2) = Boolean (n1 <= n2)
+leq _ _ = error "can't leq non-numbers"
 
 
 -- | The micro step about to be taken, from a machine control expression
 microE :: Exp -> Micro
 microE = \case
   Num{} -> DoNum
-  SaturatedAdd{} -> DoSaturatedAdd
-  AddOp{} -> DoAddOp
+  SatPrim _ op _ -> DoComp op
+  Prim op -> DoPrim op
   Var{} -> DoVar
   Lam{} -> DoLam
   App{} -> DoApp
   Let{} -> DoLet
+  Fix{} -> DoFix
+  Ite{} -> DoIte
 
 -- | The micro step about to be taken, from a machine continuation
 microK :: Kont -> Micro
 microK = \case
   Kdone{} -> DoKdone
+  Kbind{} -> DoKbind
+  Kif{} -> DoKif
   Karg{} -> DoKarg
   Kfun{} -> DoKfun
-  Kadd1{} -> DoKadd1
-  Kadd2{} -> DoKadd2
-  Kbind{} -> DoKbind
+  Kfix{} -> DoKfix
+  Kprim0{} -> DoKprim0
+  Kprim1{} -> DoKprim1
 
 
 -- | Record (in the counts) a list of micro steps as having been taken
@@ -129,20 +167,23 @@ data Micro
   | DoControlV
   -- Dispatch on control expression
   | DoNum
-  | DoSaturatedAdd
-  | DoAddOp
+  | DoPrim Op
   | DoVar
   | DoLam
   | DoApp
   | DoLet
+  | DoFix
+  | DoIte
   -- Dispatch on continuation (when control is a value)
   | DoKdone
+  | DoKbind
+  | DoKif
   | DoKarg
   | DoKfun
-  | DoKadd1
-  | DoKadd2
-  | DoKbind
+  | DoKfix
+  | DoKprim0
+  | DoKprim1
   -- Useful computation
-  | DoAddition
+  | DoComp Op
   deriving (Show,Eq,Ord)
 

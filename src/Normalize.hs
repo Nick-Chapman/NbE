@@ -46,13 +46,13 @@ reflect = \case
   Num n -> do
     return $ Syntax (Num n)
 
-  AddOp -> do
-    return $ Syntax AddOp
+  Prim op -> do
+    return $ Syntax $ Prim op
 
-  SaturatedAdd e1 e2 -> do
+  SatPrim e1 op e2 -> do
     e1 <- norm e1
     e2 <- norm e2
-    return $ Syntax (SaturatedAdd e1 e2)
+    return $ Syntax $ SatPrim e1 op e2
 
   Var x -> do
     Lookup x
@@ -69,6 +69,16 @@ reflect = \case
 
   Let x rhs body ->
     reflect (App (Lam x body) rhs)
+
+  Fix f body -> do
+    body <- ModEnv (Map.insert f (Syntax (Var f))) $ norm body
+    return $ Syntax $ Fix f body
+
+  Ite e1 e2 e3 -> do
+    e1 <- norm e1
+    e2 <- norm e2
+    e3 <- norm e3
+    return $ Syntax $ Ite e1 e2 e3
 
 
 instance Functor M where fmap = liftM
@@ -98,7 +108,7 @@ runM m = snd $ loop Map.empty 1 m k0 where
     Ret x -> k state x
     Bind m f -> loop env state m $ \state a -> loop env state (f a) k
     Lookup x -> maybe (error $ "lookup:"<>x) (k state) (Map.lookup x env)
-    Fresh -> k (state+1) ("v" <> show state)
+    Fresh -> k (state+1) ("_g" <> show state)
     Save -> k state env
     Restore env m -> loop env state m k
     ModEnv f m -> loop (f env) state m k
