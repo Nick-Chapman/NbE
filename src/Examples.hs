@@ -24,6 +24,8 @@ examples = Map.fromList
   , ("fact5", App fact (Num 5))
   , ("triangle", App triangle (Num 100))
   , ("triangleTR", App triangleTR (Num 100))
+  , ("nfib10", App nfib (Num 10)) -- 177
+  , ("nfib15", App nfib (Num 15)) -- 1973
   ]
 
 identity :: Exp
@@ -96,6 +98,18 @@ triangleTR =
          (Var "acc")
          (App (App (Var "triangleTR") (add (Var "acc") (Var "n"))) (subtract (Var "n") (Num 1)))))))
   (Num 0)
+
+nfib :: Exp
+nfib =
+  Fix "nfib"
+  (Lam "n"
+    (Ite (leq (Var "n") (Num 1))
+      (Num 1)
+      (add
+       (add
+         (Num 1)
+         (App (Var "nfib") (subtract (Var "n") (Num 1))))
+        (App (Var "nfib") (subtract (Var "n") (Num 2))))))
 
 
 add :: Exp -> Exp -> Exp
