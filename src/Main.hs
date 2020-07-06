@@ -28,6 +28,7 @@ main = do
   let prog = maybe (error $ "unknown program: "++name) id (Map.lookup name examples)
   stages "original" prog
   --stages "optimized" (normalize prog)
+  table
 
 stages :: String -> Ast.Exp -> IO ()
 stages tag exp = do
@@ -69,3 +70,15 @@ stages tag exp = do
   --print "execute(BC1.ByteCode)..."
   --print (BC1.execute bc1)
 
+
+table :: IO ()
+table = do
+  mapM_ (print . calc) [1,2,5,10,15,20,30,40,50,60,70,80,90,95,99]
+
+calc :: Int -> (Int,Int,Double,Double,Double)
+calc pImprovement = do
+  let pRemain = 100 - pImprovement
+  let speedupFactor = 100.0 / fromIntegral pRemain
+  let pGoal5x = 100.0 / (log 5 / log speedupFactor)
+  let pGoal10x = 100.0 / (log 10 / log speedupFactor)
+  (pImprovement,pRemain,speedupFactor,pGoal5x,pGoal10x)
